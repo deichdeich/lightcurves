@@ -3,20 +3,19 @@ Author: Alex Deich
 Date: Dec, 2016
 
 altonbrown.py: spits out the coordinates of an equal-arrival-time surface (EATS).
-good_eats(**kwargs) returns a 3x1 np.array with cols for r,theta,phi.  NB: EATS is
+good_eats(**kwargs) returns a 3-column np.array with cols for r,theta,phi.  NB: EATS is
 symmetric about line-of-sight, in this case taken to be phi.
 
 Usage:
-good_eats(G_sh: the lorentz factor of the shock,
-          t: the lab time in seconds,
-          t_dec: a nondimensionalization parameter for time,
-          r_dec: a nondimensionalization parameter for distance,
-          r_lim: the maximum distance to which to calculate the EATS; you can only go so far before getting imaginary numbers in the radical,
-          numbins: the spatial resolution of the surface; the higher this is, the higher r_lim can be,
-          alpha: external gas density parameter,
+good_eats(G_sh: the lorentz factor of the shock
+          t: the lab time in seconds
+          r_dec: a nondimensionalization parameter for distance
+          r_lim: the maximum distance to which to calculate the EATS; you can only go so far before getting imaginary numbers in the radical
+          numbins: the spatial resolution of the surface; the higher this is, the higher r_lim can be
+          alpha: external gas density parameter
           delta: radiative or adiabatic evolution)
 
-All equations from Panaitescu&Meszaros 1998
+All equations from Panaitescu&Meszaros 1998, all units cgs.
 """
 from __future__ import division, print_function
 import numpy as np
@@ -43,9 +42,8 @@ def get_rlim(G_sh, t, r_dec, alpha, delta):
     
     """
     The radical in the theta equation gives NaN's for r's after a limit set by
-    r = r_dec * (t_dec / (t * (2n + 1))) ^ (-1 / (2n + 1))
+    r = 2 * r_dec * (t_dec / (t * (2n + 1))) ^ (-1 / (2n + 1))
     So you want a range of r's that go from 0 to this value.
-    Don't know why you need to double it.  Seems to be exactly right though
     """
     t_dec = get_t_dec(G_sh, r_dec)
     r_lim = 2 * r_dec * ((2 * n(alpha, delta) + 1) * (t/t_dec)) ** (1/(2 * n(alpha, delta) + 1))
@@ -58,9 +56,7 @@ def get_t_dec(G, r_dec):
 def good_eats(G_sh, t, r_dec, r_lim, numbins, alpha, delta):
     
     t_dec = get_t_dec(G_sh, r_dec)
-    
-    #print("t_dec:", t_dec)
-    
+        
     # r, theta values for one phi slice
     r_vals = np.linspace(0.0001, r_lim-r_lim/2, numbins, endpoint=True)
     theta_vals = theta_func(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
@@ -110,11 +106,6 @@ if __name__ == "__main__":
     end = time()
     print("Computation time:", end-start)
 
-    """
-    #2d test plot
-    plt.plot(test_eats[:,0] * np.cos(test_eats[:,1]), test_eats[:,0] * np.sin(test_eats[:,1]))
-    plt.show()
-    """
     #3d test plot
     fig = plt.figure()
     ax = fig.gca(projection = '3d')
@@ -130,39 +121,6 @@ if __name__ == "__main__":
 
        
     plt.show()
-    """
-    # wireframe test plot
-    # matplotlib plot_surface is very slow.  Apparently the cool thing to use is MayaVi
-    # but that was too difficult to install.
-    r = test_eats[:,0]
-    theta = test_eats[:,1]
-    phi = test_eats[:,2]
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    x = r * np.outer(np.cos(phi), np.sin(theta))
-    y = r * np.outer(np.sin(phi), np.sin(theta))
-    z = r * np.outer(np.ones(np.size(phi)),np.cos(theta))
-    
-    ax.plot_surface(x,y,z,color='b')
-    plt.show()
-    """
-    """
-    # trisurface test plot
-    # also sucks
-    r = test_eats[:,0]
-    theta = test_eats[:,1]
-    phi = test_eats[:,2]
-    
-    x = r * np.cos(phi) * np.sin(theta)
-    y = r * np.sin(phi) * np.sin(theta)
-    z = r * np.cos(theta)
-    
-    fig = plt.figure()
-    ax = fig.gca(projection = '3d')
-    ax.plot_trisurf(x,y,z)
-    plt.show()
-    """
-    
-    
+
 #    print("Writing to file...")
 #    np.savetxt("test_eats.csv", test_eats) 
