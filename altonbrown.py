@@ -10,7 +10,6 @@ Usage:
 good_eats(G_sh: the lorentz factor of the shock
           t: the lab time in seconds
           r_dec: a nondimensionalization parameter for distance
-          r_lim: the maximum distance to which to calculate the EATS; you can only go so far before getting imaginary numbers in the radical
           numbins: the spatial resolution of the surface; the higher this is, the higher r_lim can be
           alpha: external gas density parameter
           delta: radiative or adiabatic evolution)
