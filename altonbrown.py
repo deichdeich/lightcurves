@@ -42,7 +42,7 @@ def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
 def get_rlim(G_sh, t, r_dec, alpha, delta):
     
     """
-    The radical in the theta equation gives NaN's for r's after a limit set by
+    The radical in the theta equation gives imaginary nums for r's after a limit set by
     r = 2 * r_dec * (t_dec / (t * (2n + 1))) ^ (-1 / (2n + 1))
     So you want a range of r's that go from 0 to this value.
     """
