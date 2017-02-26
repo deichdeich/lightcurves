@@ -25,7 +25,7 @@ import numpy as np
 cc = 29979245800. # speed of light in cm/s
 
 def a(r,r_dec):
-    return(r/r_dec)
+    return(r / r_dec)
 
 def n(alpha, delta):
     ret = (3 - alpha) / (1 + delta)
