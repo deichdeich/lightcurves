@@ -10,7 +10,7 @@ Usage:
 good_eats(G_sh: the lorentz factor of the shock
           t: the lab time in seconds
           r_dec: a nondimensionalization parameter for distance
-          numbins: the spatial resolution of the surface; the higher this is, the higher r_lim can be
+          numbins: the spatial resolution of the surface
           alpha: external gas density parameter
           delta: radiative or adiabatic evolution)
 
