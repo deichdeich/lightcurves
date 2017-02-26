@@ -15,6 +15,8 @@ good_eats(G_sh: the lorentz factor of the shock
           alpha: external gas density parameter
           delta: radiative or adiabatic evolution)
 
+
+
 All equations from Panaitescu&Meszaros 1998, all units cgs.
 """
 from __future__ import division, print_function
@@ -33,7 +35,6 @@ def tau(t,t_dec):
     return(t/t_dec)
 
 def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
-
     radical = (tau(t,t_dec)/a(r,r_dec)) - (a(r,r_dec)**(2*n(alpha, delta))/(2*n(alpha, delta) + 1))
     ret = 2 * np.arcsin( (2 * G_sh)**(-1) * np.sqrt(radical))
     return(ret)
@@ -46,19 +47,21 @@ def get_rlim(G_sh, t, r_dec, alpha, delta):
     So you want a range of r's that go from 0 to this value.
     """
     t_dec = get_t_dec(G_sh, r_dec)
-    r_lim = 2 * r_dec * ((2 * n(alpha, delta) + 1) * (t/t_dec)) ** (1/(2 * n(alpha, delta) + 1))
+    r_lim = r_dec * ((2 * n(alpha, delta) + 1) * (t/t_dec)) ** (1/(2 * n(alpha, delta) + 1))
     return(r_lim)
 
 def get_t_dec(G, r_dec):
     t_dec = r_dec/(2 * G ** 2 * cc)
     return(t_dec)
     
-def good_eats(G_sh, t, r_dec, r_lim, numbins, alpha, delta):
-    
+def good_eats(G_sh, t, r_dec, numbins, alpha, delta):
     t_dec = get_t_dec(G_sh, r_dec)
-        
+    
+    # get the furthest radius    
+    r_lim = get_rlim(G_sh, t, r_dec, alpha = 0, delta = 0)
+    
     # r, theta values for one phi slice
-    r_vals = np.linspace(0.0001, r_lim-r_lim/2, numbins, endpoint=True)
+    r_vals = np.linspace(0.0001, r_lim, numbins, endpoint=True)
     theta_vals = theta_func(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
     
     # a dummy array to fill with the right phi values
@@ -94,15 +97,13 @@ if __name__ == "__main__":
     from mpl_toolkits.mplot3d import Axes3D
     from time import time
     t1 = 100
-    r_lim1 = get_rlim(G_sh = 1e4, t = t1, r_dec = 1e16, alpha = 0, delta = 0)
-    print("r_lim:",r_lim1)
     start = time()
-    test_eats = good_eats(G_sh = 1e4, t = t1,
-                                      r_dec = 1e16,
-                                      r_lim = r_lim1,
-                                      numbins = 600,
-                                      alpha = 0,
-                                      delta = 0)
+    test_eats = good_eats(G_sh = 1e4,
+                          t = t1,
+                          r_dec = 1e16,
+                          numbins = 600,
+                          alpha = 0,
+                          delta = 0)
     end = time()
     print("Computation time:", end-start)
 
@@ -110,17 +111,18 @@ if __name__ == "__main__":
     fig = plt.figure()
     ax = fig.gca(projection = '3d')
     ax.plot(test_eats[:,0] * np.sin(test_eats[:,1]) * np.cos(test_eats[:,2]),
-                    test_eats[:,0] * np.cos(test_eats[:,1]),
-                    test_eats[:,0] * np.sin(test_eats[:,1]) * np.sin(test_eats[:,2]), color = "blue", alpha = 0.1)
-    ax.plot(-1 * test_eats[:,0] * np.sin(test_eats[:,1]) * np.cos(test_eats[:,2]),
-                    -1 * test_eats[:,0] * np.cos(test_eats[:,1]),
-                    -1 * test_eats[:,0] * np.sin(test_eats[:,1]) * np.sin(test_eats[:,2]), color = "red", alpha = 0.05)
+            test_eats[:,0] * np.cos(test_eats[:,1]),
+            test_eats[:,0] * np.sin(test_eats[:,1]) * np.sin(test_eats[:,2]),
+            color = "blue",
+            alpha = 0.1)
+
+            
     ax.xaxis.set_major_formatter(plt.NullFormatter())
-    #ax.yaxis.set_major_formatter(plt.NullFormatter())
     ax.zaxis.set_major_formatter(plt.NullFormatter())
 
        
     plt.show()
-
+    
+#    uncomment these lines to write the surface out to a CSV file.
 #    print("Writing to file...")
 #    np.savetxt("test_eats.csv", test_eats) 
