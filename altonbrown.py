@@ -39,7 +39,6 @@ def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
     return(ret)
 
 def get_rlim(G_sh, t, r_dec, alpha, delta):
-    
     """
     The sqrt in the theta equation gives imaginary nums for r's after a limit set by
     r = 2 * r_dec * (t_dec / (t * (2n + 1))) ^ (-1 / (2n + 1))
