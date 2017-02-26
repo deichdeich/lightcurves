@@ -28,15 +28,15 @@ def a(r,r_dec):
     return(r/r_dec)
 
 def n(alpha, delta):
-    ret = (3-alpha)/(1+delta)
+    ret = (3 - alpha) / (1 + delta)
     return(ret)
 
 def tau(t,t_dec):
-    return(t/t_dec)
+    return(t / t_dec)
 
 def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
     radical = (tau(t,t_dec)/a(r,r_dec)) - (a(r,r_dec)**(2*n(alpha, delta))/(2*n(alpha, delta) + 1))
-    ret = 2 * np.arcsin( (2 * G_sh)**(-1) * np.sqrt(radical))
+    ret = 2 * np.arcsin((2 * G_sh)**(-1) * np.sqrt(radical))
     return(ret)
 
 def get_rlim(G_sh, t, r_dec, alpha, delta):
@@ -51,7 +51,7 @@ def get_rlim(G_sh, t, r_dec, alpha, delta):
     return(r_lim)
 
 def get_t_dec(G, r_dec):
-    t_dec = r_dec/(2 * G ** 2 * cc)
+    t_dec = r_dec / (2 * G ** 2 * cc)
     return(t_dec)
     
 def good_eats(G_sh, t, r_dec, numbins, alpha, delta):
@@ -79,13 +79,15 @@ def good_eats(G_sh, t, r_dec, numbins, alpha, delta):
     # values from 0 to 2pi
     lower_bound = 0
     upper_bound = numbins
-    dphi = (2 * np.pi)/numbins
+    dphi = (2 * np.pi) / numbins
     for phi in np.linspace(0, 2 * np.pi, numbins):
         surface[lower_bound:upper_bound] = phi_slice
         surface[lower_bound:upper_bound,2] = phi
         lower_bound += numbins
         upper_bound += numbins
     
+    # np.arcsin is not happy with r close to 0.  This takes any NaN value and replaces
+    # it with 0.
     surface = np.nan_to_num(surface)
     
     return(surface)
@@ -110,13 +112,10 @@ if __name__ == "__main__":
     #3d test plot
     fig = plt.figure()
     ax = fig.gca(projection = '3d')
-    ax.plot(test_eats[:,0] * np.sin(test_eats[:,1]) * np.cos(test_eats[:,2]),
-            test_eats[:,0] * np.cos(test_eats[:,1]),
-            test_eats[:,0] * np.sin(test_eats[:,1]) * np.sin(test_eats[:,2]),
-            color = "blue",
-            alpha = 0.1)
-
-            
+    x = test_eats[:,0] * np.sin(test_eats[:,1]) * np.cos(test_eats[:,2])
+    y = test_eats[:,0] * np.cos(test_eats[:,1])
+    z = test_eats[:,0] * np.sin(test_eats[:,1]) * np.sin(test_eats[:,2])
+    ax.plot(x, y, z, color = "blue", alpha = 0.1)       
     ax.xaxis.set_major_formatter(plt.NullFormatter())
     ax.zaxis.set_major_formatter(plt.NullFormatter())
 
