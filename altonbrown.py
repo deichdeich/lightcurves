@@ -41,7 +41,7 @@ def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
 def get_rlim(G_sh, t, r_dec, alpha, delta):
     """
     The sqrt in the theta equation gives imaginary nums for r's after a limit set by
-    r = 2 * r_dec * (t_dec / (t * (2n + 1))) ^ (-1 / (2n + 1))
+    r = r_dec * (t_dec / (t * (2n + 1))) ^ (1 / (2n + 1))
     So you want a range of r's that go from 0 to this value.
     """
     t_dec = get_t_dec(G_sh, r_dec)
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     test_eats = good_eats(G_sh = 1e4,
                           t = 100,
                           r_dec = 1e16,
-                          numbins = 600,
+                          numbins = 300,
                           alpha = 0,
                           delta = 0)
     end = time()
