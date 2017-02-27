@@ -7,11 +7,6 @@ lightcurves.py: Calculates GRB lightcurves after the prescription in Rossi et al
 Requires altonbrown.py to generate equal arrival time surface.
 
 All units cgs.
-
-Note as of Thursday, Feb 16:
-The jet lorentz updater is giving nan's.  This might because I'm not generating an EATS
-over real distances-  I'm of order unity and the paper is always at around 1e17 and greater.
-This would have repercussions in the integral which updates f.
 """
 
 from __future__ import division, print_function
