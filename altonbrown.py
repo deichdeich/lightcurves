@@ -96,10 +96,9 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
     from time import time
-    t1 = 100
     start = time()
     test_eats = good_eats(G_sh = 1e4,
-                          t = t1,
+                          t = 100,
                           r_dec = 1e16,
                           numbins = 600,
                           alpha = 0,
