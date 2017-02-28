@@ -39,11 +39,11 @@ def mass_from_energy(energy, lorentz):
     return(energy/(lorentz * cc**2))
     
 
-########################################
+###################################################
 
-### Calculate, time-evolve and plot luminosity
+### Calculate, time-evolve and plot luminosity ###
 
-#########################################
+###################################################
 class Lightcurve(object):
     def __init__(self, spatial_res, dt = 0.0001, t_lab = 0, make_movie = False):
         
