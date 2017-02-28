@@ -78,7 +78,7 @@ def good_eats(G_sh, t, r_dec, numbins, alpha, delta):
     lower_bound = 0
     upper_bound = numbins
     dphi = (2 * np.pi) / numbins
-    for phi in np.linspace(0, 2 * np.pi, numbins):
+    for phi in np.linspace(0, (2 * np.pi) - dphi, numbins):
         surface[lower_bound:upper_bound] = phi_slice
         surface[lower_bound:upper_bound,2] = phi
         lower_bound += numbins
