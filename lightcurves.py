@@ -18,6 +18,7 @@ import sys
 import numpy as np
 import altonbrown
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from time import time
 
 ### Defining global consts. 
@@ -38,10 +39,13 @@ def mass_from_energy(energy, lorentz):
     return(energy/(lorentz * cc**2))
     
 
+########################################
 
-### Calculate and time-evolve luminosity
+### Calculate, time-evolve and plot luminosity
+
+#########################################
 class Lightcurve(object):
-    def __init__(self, spatial_res, dt = 0.0001, t_lab = 0):
+    def __init__(self, spatial_res, dt = 0.0001, t_lab = 0, make_movie = False):
         
         # initializing constants (there should be a lot)
         self.T_c = 90  # eq. 1.  core angular size
@@ -71,6 +75,8 @@ class Lightcurve(object):
         self.dph = (2 * np.pi)/numbins
         self.numbins = numbins # the resolution of the surface.  At the moment, r, th, and
                                    # ph are all binned with this number.
+        
+        self.make_movie = make_movie
         
         # stuff that will be updated over the course of the integration
         self.eats = 999 # The EATS, which will be recalculated at each timestep
@@ -224,6 +230,7 @@ class Lightcurve(object):
         self.eats[:, 4] = self.initialize()
         self.eats[:, 5] = self.initialize()
         times = np.zeros(200)
+        
         for step in xrange(1,nsteps):
             #print(step,"\n\n")
             #print("G_0:", self.eats[0:10,4])
@@ -241,72 +248,128 @@ class Lightcurve(object):
             self.lightcurve[step,0] = np.nansum(self.eats[:,12])
             self.lightcurve[step,1] = self.t_lab
             self.t_lab += self.dt
+
+            sys.stdout.write("\r{}% of the integration complete, {}-ish minutes remaining".format((100 * step/nsteps),
+                                                                                                  (np.round((np.mean(times[np.where(times!=0)]) * (nsteps - step))/60,
+                                                                                                            decimals=1))))
+            sys.stdout.flush()
+            
+            
+            if self.make_movie is not False:
+                self.movie_maker(step, nsteps)
+            
             t2 = time()
             times[step%200] = t2 - t1
-            sys.stdout.write("\r{}% of the integration complete, {}-ish minutes remaining".format((100 * step/nsteps),
-                                                                                                  (np.round((np.mean(times) * (nsteps - step))/60,
-                                                                                                            decimals=0))))
-            sys.stdout.flush()
-        
+
+
+
+####################################
+
+###  Plotting and movie making ###
+
+####################################
+
+    def movie_maker(self, step, nsteps):
+        if step % (nsteps / 100) == 0:
+            if self.make_movie == "comparison":
+                self.plot_both(savefig = True,
+                                     fname = "movies/comparison/comp_{}.png".format(step))
+            
+            elif self.make_movie == "heatmap":
+                self.plot_3d_heatmap(savefig = True,
+                                     fname = "movies/heatmap/heatmap_{}.png".format(step))
+            
+            elif self.make_movie == "lightcurve":
+                self.plot_lightcurve(savefig = True,
+                                     fname = "movies/lightcurve/lightcurve_{}.png".format(step))
+            
+            else:
+                raise ValueError("{} is not a valid plot".format(self.make_movie))
     
-    def plot_lightcurve(self, savefig = False, fname = "../../plots/lightcurve.pdf", ax = False):
+    def plot_lightcurve(self, savefig = False, fname = "lightcurve.pdf", ax = False):
+        
+        time = self.lightcurve[:,1]
+        luminosity = self.lightcurve[:,0]
+        
         if ax == False:
             fig = plt.figure()
-            plt.plot(self.lightcurve[:,1],
-                     np.log10(self.lightcurve[:,0]),
-                     linewidth = 2)
+            plt.plot(time, luminosity, linewidth = 2)
+            plt.xlim(0,10)
+            
             if savefig == False:
                 plt.show()
             elif savefig == True:
                 plt.savefig(fname)
         else:
-            ax.plot(self.lightcurve[:,1],
-                     self.lightcurve[:,0],
-                     linewidth = 2)
+            plt.plot(time, luminosity, linewidth = 2)
+            plt.xlim(0,10)
+
     
-    def plot_3d_heatmap(self, savefig = False, fname = "../../heatmap.pdf", ax = False): 
-        from mpl_toolkits.mplot3d import Axes3D
+    def plot_3d_heatmap(self, savefig = False, fname = "heatmap.pdf", ax = False): 
+        
+        # Here are the coordinates of the things I'm going to plot.  "loglum" is the
+        # log of the luminosity, which is how I color the points.
+        x = self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2])
+        y = self.eats[:,0] * np.cos(self.eats[:,1])
+        z = self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2])
+        loglum = np.log10(np.nan_to_num(self.eats[:,12]))
+        
+        # If there is no axis to plot to given in the arguments, then make your own:
         if ax == False:
             fig = plt.figure()
             ax = fig.gca(projection = '3d')
         
-            p = ax.scatter(self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2]),
-                    self.eats[:,0] * np.cos(self.eats[:,1]),
-                    self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2]),
-                    c = np.log10(np.nan_to_num(self.eats[:,12])),
-                    alpha = .07)
+            p = ax.scatter(x, y, z, c = loglum, alpha = .07)
         
-            fig.colorbar(p)
+            cb = plt.colorbar(p)
+            cb.set_clim(30,41)
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             ax.zaxis.set_major_formatter(plt.NullFormatter())
+            ax.set_zlim(-4e13,4e13)
+            ax.set_xlim(-4e13,4e13)
+            ax.set_ylim(0,3e16)
+            ax.view_init(30,30)
+            
+            
             if savefig == False:
                 plt.show()
-            else:
+            elif savefig == True:
                 plt.savefig(fname)
+
         else:
-            p = ax.scatter(self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2]),
-                    self.eats[:,0] * np.cos(self.eats[:,1]),
-                    self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2]),
-                    c = np.log10(np.nan_to_num(self.eats[:,12])),
-                    alpha = 0.3)
+            p = ax.scatter(x, y, z, c = loglum, alpha = .07)
         
+            cb = plt.colorbar(p)
+            cb.set_clim(30,41)
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             ax.zaxis.set_major_formatter(plt.NullFormatter())
+            ax.set_zlim(-4e13,4e13)
+            ax.set_xlim(-4e13,4e13)
+            ax.set_ylim(0,3e16)
+            ax.view_init(30,30)
+        plt.clf()
     
-    def plot_both(self):
+    def plot_both(self, savefig = False, fname = "comparison.png"):
+        plt.clf()
         fig = plt.figure()
         heatmap_axis = fig.add_subplot(221, projection = '3d')
         lightcurve_axis = fig.add_subplot(222)
         self.plot_3d_heatmap(ax = heatmap_axis)
         self.plot_lightcurve(ax = lightcurve_axis)
-        plt.show()
-        
+        if savefig == False:
+            plt.show()
+        elif savefig == True:
+            plt.savefig(fname)
+
+
+
+                    
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 100, dt = 0.0001)
-    test_curve.time_evolve(nsteps = 1e5)
+    test_curve = Lightcurve(spatial_res = 50, dt = 0.01, make_movie = "lightcurve")
+    test_curve.time_evolve(nsteps = 1e4)
     #print(test_curve.lightcurve)
     #test_curve.plot_3d_heatmap()
-    test_curve.plot_lightcurve()
+    #test_curve.plot_lightcurve()
     #test_curve.plot_both()   
         
         
