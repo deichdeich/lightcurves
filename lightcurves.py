@@ -293,16 +293,15 @@ class Lightcurve(object):
         
         if ax == False:
             fig = plt.figure()
-            plt.plot(time, luminosity, linewidth = 2)
-            plt.xlim(0,10)
+            plt.plot(np.log(time), np.log(luminosity), linewidth = 2)
             
             if savefig == False:
                 plt.show()
             elif savefig == True:
                 plt.savefig(fname)
         else:
-            plt.plot(time, luminosity, linewidth = 2)
-            plt.xlim(0,10)
+            ax.plot(time, luminosity, linewidth = 2)
+            ax.set_xlim(100)
 
     
     def plot_3d_heatmap(self, savefig = False, fname = "heatmap.pdf", ax = False): 
@@ -319,10 +318,12 @@ class Lightcurve(object):
             fig = plt.figure()
             ax = fig.gca(projection = '3d')
         
-            p = ax.scatter(x, y, z, c = loglum, alpha = .07)
+            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .07)
         
             cb = plt.colorbar(p)
             cb.set_clim(30,41)
+            cb.set_alpha(1)
+            cb.draw_all()
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             ax.zaxis.set_major_formatter(plt.NullFormatter())
             ax.set_zlim(-4e13,4e13)
@@ -337,20 +338,20 @@ class Lightcurve(object):
                 plt.savefig(fname)
 
         else:
-            p = ax.scatter(x, y, z, c = loglum, alpha = .07)
+            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .07)
         
             cb = plt.colorbar(p)
             cb.set_clim(30,41)
+            cb.set_alpha(1)
+            cb.draw_all()
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             ax.zaxis.set_major_formatter(plt.NullFormatter())
             ax.set_zlim(-4e13,4e13)
             ax.set_xlim(-4e13,4e13)
             ax.set_ylim(0,3e16)
             ax.view_init(30,30)
-        plt.clf()
     
     def plot_both(self, savefig = False, fname = "comparison.png"):
-        plt.clf()
         fig = plt.figure()
         heatmap_axis = fig.add_subplot(221, projection = '3d')
         lightcurve_axis = fig.add_subplot(222)
@@ -362,14 +363,13 @@ class Lightcurve(object):
             plt.savefig(fname)
 
 
-
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 50, dt = 0.01, make_movie = "lightcurve")
-    test_curve.time_evolve(nsteps = 1e4)
+    test_curve = Lightcurve(spatial_res = 50, dt = 0.01)
+    test_curve.time_evolve(nsteps = 100)
     #print(test_curve.lightcurve)
     #test_curve.plot_3d_heatmap()
-    #test_curve.plot_lightcurve()
+    test_curve.plot_lightcurve()
     #test_curve.plot_both()   
         
         
