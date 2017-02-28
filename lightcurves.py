@@ -10,9 +10,11 @@ All units cgs.
 """
 
 from __future__ import division, print_function
+import sys
 import numpy as np
 import altonbrown
 import matplotlib.pyplot as plt
+from time import time
 
 ### Defining global consts. 
 cc = 29979245800 # speed of light in cm/s
@@ -35,7 +37,7 @@ def mass_from_energy(energy, lorentz):
 
 ### Calculate and time-evolve luminosity
 class Lightcurve(object):
-    def __init__(self, numbins, dt = 0.001, t_lab = 1):
+    def __init__(self, spatial_res, dt = 0.0001, t_lab = 0):
         
         # initializing constants (there should be a lot)
         self.T_c = 90  # eq. 1.  core angular size
@@ -58,12 +60,13 @@ class Lightcurve(object):
        
         self.sigma_T = 6.6524e-25 # thomson cross section in cm^2                                                     
 
+        numbins = spatial_res
         self.e_c = self.E_iso/numbins
         self.dr = cc * self.dt # this isn't really correct.
         self.dTh = (np.pi/2)/numbins
         self.dph = (2 * np.pi)/numbins
         self.numbins = numbins # the resolution of the surface.  At the moment, r, th, and
-                               # ph are all binned with this number.
+                                   # ph are all binned with this number.
         
         # stuff that will be updated over the course of the integration
         self.eats = 999 # The EATS, which will be recalculated at each timestep
@@ -94,10 +97,10 @@ class Lightcurve(object):
         f = self.eats[:,3]
         numerator = np.sqrt(1 + (4 * gamma_0 * f) + (4 * f**2)) - 1
         denominator = 2 * f
-        print("update_gammas numerator:", numerator)
-        print("Average:", np.mean(numerator))
-        print("update_gammas denominator:", denominator)
-        print("Average:", np.mean(denominator))
+        #print("update_gammas numerator:", numerator)
+        #print("Average:", np.mean(numerator))
+        #print("update_gammas denominator:", denominator)
+        #print("Average:", np.mean(denominator))
         gamma = numerator/denominator
         
 
@@ -108,11 +111,11 @@ class Lightcurve(object):
     
     def update_delta(self):
         gamma = self.eats[:,5]
-        print("gamma according to delta:", gamma)
+        #print("gamma according to delta:", gamma)
         beta = beta_from_gamma(gamma)
-        print("beta according to delta:", beta)
+        #print("beta according to delta:", beta)
         denominator = gamma * (1 - beta * np.cos(self.eats[:,1]))
-        print("denominator for delta:", denominator)
+        #print("denominator for delta:", denominator)
         return(1/denominator)
         
     
@@ -152,7 +155,7 @@ class Lightcurve(object):
         
     def do_all_the_calcs(self, dark_eats):
         # I'll make an array full of 0's that I'll fill with all the new calculations
-        bright_eats = np.zeros_like(self.eats)
+        bright_eats = np.copy(self.eats)
         """
         The columns are
         
@@ -172,32 +175,30 @@ class Lightcurve(object):
         """
         # The order that these are performed does not matter
         bright_eats[:, 0:3] = dark_eats
-        print("After updating coords:", np.isnan(bright_eats).any())
+        #print("After updating coords:", np.isnan(bright_eats).any())
         bright_eats[:, 3] = self.update_f()
-        print("After updating f:", np.isnan(bright_eats).any())
-        print("Max of f:", np.max(bright_eats[:,3]))
+        #print("After updating f:", np.isnan(bright_eats).any())
+        #print("Max of f:", np.max(bright_eats[:,3]))
         bright_eats[:, 4] = self.eats[:,4]
-        print("After adding G_0:", np.isnan(bright_eats).any())
+        #print("After adding G_0:", np.isnan(bright_eats).any())
         bright_eats[:, 5] = self.update_gamma()
-        print("After updating G:", np.isnan(bright_eats).any())
+        #print("After updating G:", np.isnan(bright_eats).any())
         bright_eats[:, 6] = self.update_delta()
-        print("After updating delta:", np.isnan(bright_eats).any())
+        #print("After updating delta:", np.isnan(bright_eats).any())
         bright_eats[:, 7] = self.update_B()
-        print("After updating B:", np.isnan(bright_eats).any())
+        #print("After updating B:", np.isnan(bright_eats).any())
         bright_eats[:, 8] = self.update_g_m()
-        print("After updating g_m:", np.isnan(bright_eats).any())
+        #print("After updating g_m:", np.isnan(bright_eats).any())
         bright_eats[:, 9] = self.update_nu_m()
-        print("After updating nu_m:", np.isnan(bright_eats).any())
+        #print("After updating nu_m:", np.isnan(bright_eats).any())
         bright_eats[:, 10] = self.update_P()
-        print("After updating P:", np.isnan(bright_eats).any())
+        #print("After updating P:", np.isnan(bright_eats).any())
         bright_eats[:, 11] = self.update_I_p()
-        print("After updating I_p:", np.isnan(bright_eats).any())
+        #print("After updating I_p:", np.isnan(bright_eats).any())
         bright_eats[:, 12] = self.update_dL()
-        print("After updating dL:", np.isnan(bright_eats).any())
+        #print("After updating dL:", np.isnan(bright_eats).any())
         
-        return(bright_eats)
-        
-        
+        return(bright_eats)     
         
     
     def time_evolve(self, nsteps):
@@ -205,43 +206,27 @@ class Lightcurve(object):
         # do_all_the_calcs(), whose output is all of the data for the current
         # timestep.  Then, sum the intensity column and record that sum in the
         # lightcurve array.
-        
+        nsteps = int(nsteps)
         self.lightcurve = np.zeros((nsteps,2))
-
-        r_lim1 = altonbrown.get_rlim(G_sh = 1e4,
-                                     t = self.t_lab,
-                                     r_dec = 1e16,
-                                     alpha = 0,
-                                     delta = 0)
-
         init_dark_eats = altonbrown.good_eats(G_sh = 1e4,
                                               t = self.t_lab,
                                               r_dec = 1e16,
-                                              r_lim = r_lim1,
                                               numbins = self.numbins,
                                               alpha = 0,
                                               delta = 0)
                                               
-                                              
         self.eats = np.zeros((len(init_dark_eats), 13))
-        
         self.eats[:,0:3] = init_dark_eats
         self.eats[:, 4] = self.initialize()
         self.eats[:, 5] = self.initialize()
-        
+        times = np.zeros(200)
         for step in xrange(1,nsteps):
-            print(step,"\n\n")
-            print("G_0:", self.eats[0:10,4])
-            new_r_lim = altonbrown.get_rlim(G_sh = self.eats[0,4],
-                                            t = self.t_lab,
-                                            r_dec = 1e16,
-                                            alpha = 0,
-                                            delta = 0)
-            print("rlim:",new_r_lim)                            
+            #print(step,"\n\n")
+            #print("G_0:", self.eats[0:10,4])
+            t1 = time()
             new_eats = altonbrown.good_eats(G_sh = self.eats[0,4],
                                             t = self.t_lab,
                                             r_dec = 1e16,
-                                            r_lim = new_r_lim,
                                             numbins = self.numbins,
                                             alpha = 0,
                                             delta = 0)
@@ -252,43 +237,73 @@ class Lightcurve(object):
             self.lightcurve[step,0] = np.nansum(self.eats[:,12])
             self.lightcurve[step,1] = self.t_lab
             self.t_lab += self.dt
+            t2 = time()
+            times[step%200] = t2 - t1
+            sys.stdout.write("\r{}% of the integration complete, {}-ish minutes remaining".format((100 * step/nsteps),
+                                                                                                  (np.round((np.mean(times) * (nsteps - step))/60,
+                                                                                                            decimals=0))))
+            sys.stdout.flush()
         
     
-    def plot_lightcurve(self, savefig = False, fname = "lightcurve.pdf"):
-        plt.plot(self.lightcurve[:,0],self.lightcurve[:,1])
-        if savefig == False:
-            plt.show()
-        elif savefig == True:
-            plt.savefig(fname)
+    def plot_lightcurve(self, savefig = False, fname = "../../plots/lightcurve.pdf", ax = False):
+        if ax == False:
+            fig = plt.figure()
+            plt.plot(self.lightcurve[:,1],
+                     np.log10(self.lightcurve[:,0]),
+                     linewidth = 2)
+            if savefig == False:
+                plt.show()
+            elif savefig == True:
+                plt.savefig(fname)
+        else:
+            ax.plot(self.lightcurve[:,1],
+                     self.lightcurve[:,0],
+                     linewidth = 2)
     
-    def plot_3d_heatmap(self, savefig = False, fname = "heatmap.pdf"):
-        
+    def plot_3d_heatmap(self, savefig = False, fname = "../../heatmap.pdf", ax = False): 
         from mpl_toolkits.mplot3d import Axes3D
+        if ax == False:
+            fig = plt.figure()
+            ax = fig.gca(projection = '3d')
+        
+            p = ax.scatter(self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2]),
+                    self.eats[:,0] * np.cos(self.eats[:,1]),
+                    self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2]),
+                    c = np.log10(np.nan_to_num(self.eats[:,12])),
+                    alpha = .07)
+        
+            fig.colorbar(p)
+            ax.xaxis.set_major_formatter(plt.NullFormatter())
+            ax.zaxis.set_major_formatter(plt.NullFormatter())
+            if savefig == False:
+                plt.show()
+            else:
+                plt.savefig(fname)
+        else:
+            p = ax.scatter(self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2]),
+                    self.eats[:,0] * np.cos(self.eats[:,1]),
+                    self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2]),
+                    c = np.log10(np.nan_to_num(self.eats[:,12])),
+                    alpha = 0.3)
+        
+            ax.xaxis.set_major_formatter(plt.NullFormatter())
+            ax.zaxis.set_major_formatter(plt.NullFormatter())
+    
+    def plot_both(self):
         fig = plt.figure()
-        
-        ax = fig.gca(projection = '3d')
-        
-        p = ax.scatter(self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2]),
-                self.eats[:,0] * np.cos(self.eats[:,1]),
-                self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2]),
-                c = np.nan_to_num(self.eats[:,12]),
-                alpha = 0.3)
-        
-        plt.colorbar(p)
-        ax.xaxis.set_major_formatter(plt.NullFormatter())
-        #ax.yaxis.set_major_formatter(plt.NullFormatter())
-        ax.zaxis.set_major_formatter(plt.NullFormatter())
+        heatmap_axis = fig.add_subplot(221, projection = '3d')
+        lightcurve_axis = fig.add_subplot(222)
+        self.plot_3d_heatmap(ax = heatmap_axis)
+        self.plot_lightcurve(ax = lightcurve_axis)
         plt.show()
         
-        
-        
 if __name__ == "__main__":
-    test_curve = Lightcurve(40)
-    test_curve.time_evolve(2)
-    print(test_curve.lightcurve)
+    test_curve = Lightcurve(spatial_res = 100, dt = 0.0001)
+    test_curve.time_evolve(nsteps = 1e5)
+    #print(test_curve.lightcurve)
     #test_curve.plot_3d_heatmap()
-    #test_curve.plot_lightcurve()
-        
+    test_curve.plot_lightcurve()
+    #test_curve.plot_both()   
         
         
         
