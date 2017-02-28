@@ -6,6 +6,10 @@ lightcurves.py: Calculates GRB lightcurves after the prescription in Rossi et al
 
 Requires altonbrown.py to generate equal arrival time surface.
 
+At the moment, there are a lot of commented-out print statements for tracking the
+calculation through a timestep.  I'm leaving these in for now, while I figure out
+what's going wrong.
+
 All units cgs.
 """
 
