@@ -2,7 +2,7 @@
 Author: Alex Deich
 Date: January, 2017
 
-lightcurves.py: Calculates GRB lightcurves after the prescription in Rossi et al. 2004.
+lightcurves.py: Calculates GRB lightcurves after the prescription in Rossi et al. 2002.
 
 Requires altonbrown.py to generate equal arrival time surface.
 
