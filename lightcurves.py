@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from time import time
 
-### Defining global consts. 
+### Defining global constants
 cc = 29979245800 # speed of light in cm/s
 
 ### Some helpful functions
