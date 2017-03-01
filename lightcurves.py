@@ -6,10 +6,6 @@ lightcurves.py: Calculates GRB lightcurves after the prescription in Rossi et al
 
 Requires altonbrown.py to generate equal arrival time surface.
 
-At the moment, there are a lot of commented-out print statements for tracking the
-calculation through a timestep.  I'm leaving these in for now, while I figure out
-what's going wrong.
-
 All units cgs.
 """
 
@@ -45,7 +41,7 @@ def mass_from_energy(energy, lorentz):
 
 ###################################################
 class Lightcurve(object):
-    def __init__(self, spatial_res, dt = 0.0001, t_lab = 0, make_movie = False):
+    def __init__(self, spatial_res, dt = 0.0001, t_lab = 0, movie = False):
         
         # initializing constants (there should be a lot)
         self.T_c = 90  # eq. 1.  core angular size
@@ -76,7 +72,7 @@ class Lightcurve(object):
         self.numbins = numbins # the resolution of the surface.  At the moment, r, th, and
                                    # ph are all binned with this number.
         
-        self.make_movie = make_movie
+        self.movie = movie
         
         # stuff that will be updated over the course of the integration
         self.eats = 999 # The EATS, which will be recalculated at each timestep
@@ -107,10 +103,6 @@ class Lightcurve(object):
         f = self.eats[:,3]
         numerator = np.sqrt(1 + (4 * gamma_0 * f) + (4 * f**2)) - 1
         denominator = 2 * f
-        #print("update_gammas numerator:", numerator)
-        #print("Average:", np.mean(numerator))
-        #print("update_gammas denominator:", denominator)
-        #print("Average:", np.mean(denominator))
         gamma = numerator/denominator
         
 
@@ -121,11 +113,8 @@ class Lightcurve(object):
     
     def update_delta(self):
         gamma = self.eats[:,5]
-        #print("gamma according to delta:", gamma)
         beta = beta_from_gamma(gamma)
-        #print("beta according to delta:", beta)
         denominator = gamma * (1 - beta * np.cos(self.eats[:,1]))
-        #print("denominator for delta:", denominator)
         return(1/denominator)
         
     
@@ -146,7 +135,7 @@ class Lightcurve(object):
         return(self.m_p / self.m_e * self.epsilon_e * (self.eats[:,5] - 1) )
     
     def update_P(self):
-        const = (4 / 3) * self.sigma_T * cc * (1/(8 * np.pi))
+        const = (4 / 3) * self.sigma_T * cc * (1 / (8 * np.pi))
         otherthing = self.eats[:,7]**2 * (self.eats[:,8]**2 - 1)
         return(const * otherthing)
     
@@ -185,28 +174,16 @@ class Lightcurve(object):
         """
         # The order that these are performed does not matter
         bright_eats[:, 0:3] = dark_eats
-        #print("After updating coords:", np.isnan(bright_eats).any())
         bright_eats[:, 3] = self.update_f()
-        #print("After updating f:", np.isnan(bright_eats).any())
-        #print("Max of f:", np.max(bright_eats[:,3]))
         bright_eats[:, 4] = self.eats[:,4]
-        #print("After adding G_0:", np.isnan(bright_eats).any())
         bright_eats[:, 5] = self.update_gamma()
-        #print("After updating G:", np.isnan(bright_eats).any())
         bright_eats[:, 6] = self.update_delta()
-        #print("After updating delta:", np.isnan(bright_eats).any())
         bright_eats[:, 7] = self.update_B()
-        #print("After updating B:", np.isnan(bright_eats).any())
         bright_eats[:, 8] = self.update_g_m()
-        #print("After updating g_m:", np.isnan(bright_eats).any())
         bright_eats[:, 9] = self.update_nu_m()
-        #print("After updating nu_m:", np.isnan(bright_eats).any())
         bright_eats[:, 10] = self.update_P()
-        #print("After updating P:", np.isnan(bright_eats).any())
         bright_eats[:, 11] = self.update_I_p()
-        #print("After updating I_p:", np.isnan(bright_eats).any())
         bright_eats[:, 12] = self.update_dL()
-        #print("After updating dL:", np.isnan(bright_eats).any())
         
         return(bright_eats)     
         
@@ -229,12 +206,17 @@ class Lightcurve(object):
         self.eats[:,0:3] = init_dark_eats
         self.eats[:, 4] = self.initialize()
         self.eats[:, 5] = self.initialize()
+        
+        # this is where I store how long the last 200 timesteps took in order to
+        # estimate time remaining
         times = np.zeros(200)
         
         for step in xrange(1,nsteps):
-            #print(step,"\n\n")
-            #print("G_0:", self.eats[0:10,4])
+            
+            # start the clock
             t1 = time()
+            
+            
             new_eats = altonbrown.good_eats(G_sh = self.eats[0,4],
                                             t = self.t_lab,
                                             r_dec = 1e16,
@@ -255,37 +237,37 @@ class Lightcurve(object):
             sys.stdout.flush()
             
             
-            if self.make_movie is not False:
+            if self.movie is not False:
                 self.movie_maker(step, nsteps)
             
+            # stop the clock and add the time to the array
             t2 = time()
             times[step%200] = t2 - t1
 
 
 
-####################################
+    ####################################
 
-###  Plotting and movie making ###
+    ###  Plotting and movie making ###
 
-####################################
-
+    ####################################
     def movie_maker(self, step, nsteps):
         if step % (nsteps / 100) == 0:
-            if self.make_movie == "comparison":
+            if self.movie == "comparison":
                 self.plot_both(savefig = True,
                                      fname = "movies/comparison/comp_{}.png".format(step))
             
-            elif self.make_movie == "heatmap":
+            elif self.movie == "heatmap":
                 self.plot_3d_heatmap(savefig = True,
                                      fname = "movies/heatmap/heatmap_{}.png".format(step))
             
-            elif self.make_movie == "lightcurve":
+            elif self.movie == "lightcurve":
                 self.plot_lightcurve(savefig = True,
                                      fname = "movies/lightcurve/lightcurve_{}.png".format(step))
-            
+                                         
             else:
-                raise ValueError("{} is not a valid plot".format(self.make_movie))
-    
+                raise ValueError("{} is not a valid plot".format(self.movie))
+            
     def plot_lightcurve(self, savefig = False, fname = "lightcurve.pdf", ax = False):
         
         time = self.lightcurve[:,1]
@@ -299,9 +281,11 @@ class Lightcurve(object):
                 plt.show()
             elif savefig == True:
                 plt.savefig(fname)
+            plt.close()
         else:
-            ax.plot(time, luminosity, linewidth = 2)
-            ax.set_xlim(100)
+            ax.scatter(np.log(time), np.log(luminosity), linewidth = 2)
+            ax.set_xlim(-3,9)
+            ax.set_ylim(85,105)
 
     
     def plot_3d_heatmap(self, savefig = False, fname = "heatmap.pdf", ax = False): 
@@ -326,9 +310,9 @@ class Lightcurve(object):
             cb.draw_all()
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             ax.zaxis.set_major_formatter(plt.NullFormatter())
-            ax.set_zlim(-4e13,4e13)
-            ax.set_xlim(-4e13,4e13)
-            ax.set_ylim(0,3e16)
+            ax.set_zlim(-4e15,4e15)
+            ax.set_xlim(-4e15,4e15)
+            ax.set_ylim(0,3e18)
             ax.view_init(30,30)
             
             
@@ -336,48 +320,44 @@ class Lightcurve(object):
                 plt.show()
             elif savefig == True:
                 plt.savefig(fname)
+            plt.close()
 
         else:
-            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .07)
+            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .03)
         
             cb = plt.colorbar(p)
-            cb.set_clim(30,41)
+            cb.set_clim(28,35)
             cb.set_alpha(1)
             cb.draw_all()
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             ax.zaxis.set_major_formatter(plt.NullFormatter())
-            ax.set_zlim(-4e13,4e13)
-            ax.set_xlim(-4e13,4e13)
-            ax.set_ylim(0,3e16)
+            ax.set_zlim(-4e17,4e17)
+            ax.set_xlim(-4e17,4e17)
+            ax.set_ylim(0,1e18)
             ax.view_init(30,30)
-    
+
     def plot_both(self, savefig = False, fname = "comparison.png"):
         fig = plt.figure()
-        heatmap_axis = fig.add_subplot(221, projection = '3d')
-        lightcurve_axis = fig.add_subplot(222)
+        heatmap_axis = fig.add_subplot(122, projection = '3d')
+        lightcurve_axis = fig.add_subplot(121, aspect = 1)
         self.plot_3d_heatmap(ax = heatmap_axis)
         self.plot_lightcurve(ax = lightcurve_axis)
         if savefig == False:
             plt.show()
         elif savefig == True:
             plt.savefig(fname)
+        
+        plt.close()
 
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 50, dt = 0.01)
-    test_curve.time_evolve(nsteps = 100)
+    test_curve = Lightcurve(spatial_res = 100, dt = 0.1, movie = "comparison")
+    test_curve.time_evolve(nsteps = 1e4)
     #print(test_curve.lightcurve)
     #test_curve.plot_3d_heatmap()
-    test_curve.plot_lightcurve()
-    #test_curve.plot_both()   
-        
-        
-        
-        
-        
-        
-        
+    #test_curve.plot_lightcurve()
+    #test_curve.plot_both()
         
         
         
