@@ -66,7 +66,7 @@ class Lightcurve(object):
 
         numbins = spatial_res
         self.e_c = self.E_iso/numbins
-        self.dr = cc * self.dt # this isn't really correct.
+        self.dr = cc * self.dt # this isn't really correct, but it gets corrected after 1 timestep
         self.dTh = (np.pi/2)/numbins
         self.dph = (2 * np.pi)/numbins
         self.numbins = numbins # the resolution of the surface.  At the moment, r, th, and
@@ -122,7 +122,7 @@ class Lightcurve(object):
     def update_f(self):
         omega = solid_angle(self.eats[:,1])
         rho = self.density()
-        df = (self.M_0_inv * omega * rho * self.eats[:,0]**2 * cc * self.dt) # using c*dt here instead of dr for now.
+        df = (self.M_0_inv * omega * rho * self.eats[:,0]**2 * self.dr)
         return(df)
     
     def update_B(self):
@@ -155,6 +155,9 @@ class Lightcurve(object):
     def do_all_the_calcs(self, dark_eats):
         # I'll make an array full of 0's that I'll fill with all the new calculations
         bright_eats = np.copy(self.eats)
+        
+        # This is how much the radius of each bin has changed.
+        self.dr = dark_eats[:, 0] - self.eats[:, 0]
         """
         The columns are
         
@@ -172,7 +175,7 @@ class Lightcurve(object):
         11: I_p
         12: dL
         """
-        # The order that these are performed does not matter
+        # The order that these are performed does matter
         bright_eats[:, 0:3] = dark_eats
         bright_eats[:, 3] = self.update_f()
         bright_eats[:, 4] = self.eats[:,4]
@@ -247,9 +250,7 @@ class Lightcurve(object):
 
 
     ####################################
-
-    ###  Plotting and movie making ###
-
+    ###   Plotting and movie making  ###
     ####################################
     def movie_maker(self, step, nsteps):
         if step % (nsteps / 100) == 0:
@@ -283,13 +284,12 @@ class Lightcurve(object):
                 plt.savefig(fname)
             plt.close()
         else:
-            ax.scatter(np.log(time), np.log(luminosity), linewidth = 2)
+            ax.scatter(np.log(time), np.log(luminosity), linewidth = 2, edgecolor = 'none')
             ax.set_xlim(-3,9)
             ax.set_ylim(85,105)
 
     
-    def plot_3d_heatmap(self, savefig = False, fname = "heatmap.pdf", ax = False): 
-        
+    def plot_3d_heatmap(self, savefig = False, fname = "heatmap.pdf", ax = False):         
         # Here are the coordinates of the things I'm going to plot.  "loglum" is the
         # log of the luminosity, which is how I color the points.
         x = self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2])
@@ -302,8 +302,7 @@ class Lightcurve(object):
             fig = plt.figure()
             ax = fig.gca(projection = '3d')
         
-            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .07)
-        
+            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .07)        
             cb = plt.colorbar(p)
             cb.set_clim(30,41)
             cb.set_alpha(1)
@@ -323,8 +322,7 @@ class Lightcurve(object):
             plt.close()
 
         else:
-            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .03)
-        
+            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .03)     
             cb = plt.colorbar(p)
             cb.set_clim(28,35)
             cb.set_alpha(1)
@@ -352,11 +350,10 @@ class Lightcurve(object):
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 100, dt = 0.1, movie = "comparison")
+    test_curve = Lightcurve(spatial_res = 100, dt = 0.1)
     test_curve.time_evolve(nsteps = 1e4)
-    #print(test_curve.lightcurve)
     #test_curve.plot_3d_heatmap()
-    #test_curve.plot_lightcurve()
+    test_curve.plot_lightcurve()
     #test_curve.plot_both()
         
         
