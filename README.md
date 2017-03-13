@@ -1,6 +1,6 @@
 # lightcurves
 
-This is code I wrote at Oregon State University in 2016/2017 for analysis of the off-axis lightcurve from a GRB.
+This is code I am writing at Oregon State University in 2016/2017 for analysis of the off-axis lightcurve from a GRB.
 It's composed of two pieces:  `altonbrown.py` and `lightcurves.py`.  `altonbrown.py` returns the 3-dimensional coordinates of
 the equal arrival time surface (EATS) of the light from the GRB.  This surface is then used by `lightcurves.py` in calculating
 the expected lightcurve.  This code is largely a recreation of extant FORTRAN code, rewritten for modern times.
