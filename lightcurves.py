@@ -12,7 +12,7 @@ All units cgs.
 from __future__ import division, print_function
 import sys
 import numpy as np
-import altonbrown
+import altonbrown_recarrays as altonbrown
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from time import time
@@ -78,6 +78,25 @@ class Lightcurve(object):
         
         self.movie = movie
         
+        # colnames is the name and datatype of everything that will be updated.
+        self.colnames = [('r', 'float'),  # r, radius
+                         ('Th', 'float'), # theta, polar angle
+                         ('Ph', 'float'), # phi, azimuthal angle
+                         ('f', 'float'), # f, ratio of swept-up mass to initial rest mass
+                         ('G_0', 'float'), # G_0, initial Lorentz factor
+                         ('G_j', 'float'), # G_j, instantaneous Lorentz factor of the jet
+                         ('delta', 'float'), # delta, relativistic doppler factor
+                         ('B', 'float'), # B, magnetic field
+                         ('g_m', 'float'), # g_m, Lorentz factor of the matter
+                         ('nu_m', 'float'), # nu_m, peak synchrotron frequency
+                         ('P', 'float'), # P, total power
+                         ('I_p', 'float'), # I_p, peak co-moving intensity
+                         ('dL', 'float'), # dL, local observed luminosity
+                         ('nu', 'float'), # nu, boosted co-moving frequency of nu_obs
+                         ('I_nu', 'float'), # I_nu, co-moving intensity at observation frequency
+                         ('I_nu_obs', 'float'), # I_nu_obs, observed frequency intensity boosted to detector frame
+                         ('dL_nu', 'float')] # dL_nu, luminosity of observed frequency
+
         # stuff that will be updated over the course of the integration
         self.eats = 999 # The EATS, which will be recalculated at each timestep
         self.G_j = self.G_c # jet Lorentz
@@ -88,143 +107,150 @@ class Lightcurve(object):
         self.G_sh = self.G_j # vector or scalar? ask about it.        
         self.M_0_inv = 999 # (initial fireball rest mass)^-1 as a function of angle
         self.lightcurve = 999 # this will eventually have the array with entries for the intensity at each timestep.
-
-    def energy_per_omega(self):
-        return(self.e_c/(1 + (self.eats[:, 1]/self.T_c)**(self.al_e * self.be_e))**(1/self.be_e))
     
-    def lorentz_per_omega(self):
-        return(self.G_c/(1 + (self.eats[:, 1]/self.T_c)**(self.al_g * self.be_g))**(1/self.be_g))
+        
+    def energy_per_omega(self, theta):
+        return(self.e_c/(1 + (theta/self.T_c)**(self.al_e * self.be_e))**(1/self.be_e))
     
-    def initialize_M_0_inv(self):
-        M_0_inv = self.lorentz_per_omega() * cc ** 2 / self.energy_per_omega()
+    def lorentz_per_omega(self, theta):
+        return(self.G_c/(1 + (theta/self.T_c)**(self.al_g * self.be_g))**(1/self.be_g))
+    
+    def initialize_M_0_inv(self, lorentz_per_omega, energy_per_omega):
+        M_0_inv = lorentz_per_omega * cc ** 2 / energy_per_omega
         return(M_0_inv)
     
     def density(self):
         return(self.m_p * self.n)
     
-    def update_gamma(self):
-        gamma_0 = self.eats[:,4]
-        f = self.eats[:,3]
+    def update_gamma(self, gamma_0, f):
         numerator = np.sqrt(1 + (4 * gamma_0 * f) + (4 * f**2)) - 1
         denominator = 2 * f
         gamma = numerator/denominator
         
-
+        # check for superluminal behavior
         if gamma.any() < 1:
             raise ArithmeticError("Gamma less than 1!")
             
         return(gamma)
     
-    def update_delta(self):
-        gamma = self.eats[:,5]
+    def update_delta(self, theta, gamma):
         beta = beta_from_gamma(gamma)
-        denominator = gamma * (1 - beta * np.cos(self.eats[:,1]))
+        denominator = gamma * (1 - beta * np.cos(theta))
         return(1/denominator)
         
     
-    #eq. 5. ratio of swept-up mass to initial fireball rest mass, function of theta.        
-    def update_f(self):
-        omega = solid_angle(self.eats[:,1])
+    def update_f(self, r, theta):
+        omega = solid_angle(theta)
         rho = self.density()
-        df = (self.M_0_inv * omega * rho * self.eats[:,0]**2 * self.dr)
+        df = (self.M_0_inv * omega * rho * r**2 * self.dr)
         return(df)
     
-    def update_B(self):
+    def update_B(self, G_j):
         const = np.sqrt(32 * np.pi * self.epsilon_B * self.m_p * cc**2 * self.n)
-        otherthing = np.sqrt(self.eats[:,5]**2 - 1)
+        otherthing = np.sqrt(G_j**2 - 1)
         
         return(const * otherthing)
     
-    def update_g_m(self):
-        return(self.m_p / self.m_e * self.epsilon_e * (self.eats[:,5] - 1) )
+    def update_g_m(self, G_j):
+        return(self.m_p / self.m_e * self.epsilon_e * (G_j - 1) )
     
-    def update_P(self):
+    def update_P(self, B, g_m):
         const = (4 / 3) * self.sigma_T * cc * (1 / (8 * np.pi))
-        otherthing = self.eats[:,7]**2 * (self.eats[:,8]**2 - 1)
+        otherthing = B**2 * (g_m**2 - 1)
         return(const * otherthing)
     
-    def update_nu_m(self):
-        numerator = 0.25 * self.e * self.eats[:,8]**2 * self.eats[:,7]
+    def update_nu_m(self, B, g_m):
+        numerator = 0.25 * self.e * g_m**2 * B
         denominator = self.m_e * cc
         return(numerator/denominator)
     
-    def update_I_p(self):
-        numerator = self.eats[:,10] * self.n * self.eats[:,0]
-        return(numerator/self.eats[:,9])
+    def update_I_p(self, r, nu_m, P):
+        numerator = P * self.n * r
+        return(numerator/nu_m)
     
-    def update_dL(self):
-        return(self.eats[:,11] * self.eats[:,6]**3 * self.eats[:,0]**2 * np.sin(self.eats[:,1]) * self.dTh * self.dph)
+    def update_dL(self, r, theta, I_p, delta):
+        return(I_p * delta**3 * r**2 * np.sin(theta) * self.dTh * self.dph)
         
-    def update_nu(self):
-        return(self.nu_obs / self.eats[:,6])
+    def update_nu(self, delta):
+        return(self.nu_obs / delta)
 
-    def update_I_nu(self):
-        
-        where_is_nu_m_greater = np.where(self.eats[:,9] > self.eats[:,13])
-        where_is_nu_m_less = np.where(self.eats[:,9] < self.eats[:,13])
+    def update_I_nu(self, nu_m, nu, I_p, P): 
+        where_is_nu_m_greater = np.where(nu_m > nu)
+        where_is_nu_m_less = np.where(nu_m < nu)
         I_nu = np.zeros(len(self.eats))
-        I_nu[where_is_nu_m_greater] = self.eats[:, 11][where_is_nu_m_greater] * (self.eats[:, 13][where_is_nu_m_greater] / self.eats[:, 9][where_is_nu_m_greater])**(1/3)
-        I_nu[where_is_nu_m_less] = self.eats[:, 11][where_is_nu_m_less] * (self.eats[:, 13][where_is_nu_m_less] / self.eats[:, 9][where_is_nu_m_less])**(-(self.eats[:, 10][where_is_nu_m_less] - 1)/2)
+        I_nu[where_is_nu_m_greater] = I_p[where_is_nu_m_greater] * (nu[where_is_nu_m_greater] / nu_m[where_is_nu_m_greater])**(1/3)
+        I_nu[where_is_nu_m_less] = I_p[where_is_nu_m_less] * (nu[where_is_nu_m_less] / nu_m[where_is_nu_m_less])**(-(P[where_is_nu_m_less] - 1)/2)
         
         return(I_nu)
     
-    def boost_intensity(self):
-        return(self.eats[:, 14] * self.eats[:, 6]**3)
-        
+    def boost_intensity(self, I, delta):
+        return(I * delta**3)
     
     def do_all_the_calcs(self, dark_eats):
-        # I'll make an array full of 0's that I'll fill with all the new calculations
+        # "bright_eats" is the new surface for which all the values are being calculated.
+        # "dark_eats" is just the coordinate array from altonbrown.py
+        
+        # initialize bright_eats by copying the existing eats.
         bright_eats = np.copy(self.eats)
         
         # This is how much the radius of each bin has changed.
-        self.dr = dark_eats[:, 0] - self.eats[:, 0]
-        self.dTh = dark_eats[:, 1] - self.eats[:, 1]
-        """
-        The columns are
-        
-        0: r, radius
-        1: theta, polar angle
-        2: phi, azimuthal angle
-        3: f, ratio of swept-up mass to initial rest mass
-        4: G_0, initial Lorentz factor
-        5: G_j, instantaneous Lorentz factor of the jet
-        6: delta, relativistic doppler factor
-        7: B, magnetic field
-        8: g_m, Lorentz factor of the matter
-        9: nu_m, peak synchrotron frequency
-        10: P, total power
-        11: I_p, peak co-moving intensity
-        12: dL, local observed luminosity
-        13: nu, boosted co-moving frequency of nu_obs
-        14: I_nu, co-moving intensity at observation frequency
-        15: I_nu_obs, observed frequency intensity boosted to detector frame
-        16: dL_nu, luminosity of observed frequency
-        """
+        self.dr = dark_eats['r'] - self.eats['r']
+        self.dTh = dark_eats['Th'] - self.eats['Th']
+
         # The order that these are performed does matter
-        bright_eats[:, 0:3] = dark_eats
-        bright_eats[:, 3] = bright_eats[:, 3] + self.update_f()
-        bright_eats[:, 4] = self.eats[:,4]
-        bright_eats[:, 5] = self.update_gamma()
-        bright_eats[:, 6] = self.update_delta()
-        bright_eats[:, 7] = self.update_B()
-        bright_eats[:, 8] = self.update_g_m()
-        bright_eats[:, 9] = self.update_nu_m()
-        bright_eats[:, 10] = self.update_P()
-        bright_eats[:, 11] = self.update_I_p()
-        bright_eats[:, 12] = self.update_dL()
-        bright_eats[:, 13] = self.update_nu()
-        bright_eats[:, 14] = self.update_I_nu()
-        bright_eats[:, 15] = self.boost_intensity()
-        bright_eats[:, 16] = bright_eats[:, 15] * bright_eats[:, 0] * np.sin(bright_eats[:, 1]) * self.dTh * self.dph
+        bright_eats['r'] = dark_eats['r']
         
+        bright_eats['Th'] = dark_eats['Th']
+        
+        bright_eats['Ph'] = dark_eats['Ph']
+        
+        bright_eats['f'] = self.eats['f'] + self.update_f(bright_eats['r'], bright_eats['Th'])                     
+        
+        bright_eats['G_0'] = self.eats['G_0']
+        
+        bright_eats['G_j'] = self.update_gamma(bright_eats['G_0'], bright_eats['f'])                               
+        
+        bright_eats['delta'] = self.update_delta(bright_eats['Th'], bright_eats['G_j'])                         
+        
+        bright_eats['B'] = self.update_B(bright_eats['G_j'])
+        
+        bright_eats['g_m'] = self.update_g_m(bright_eats['G_j'])
+        
+        bright_eats['nu_m'] = self.update_nu_m(bright_eats['B'], bright_eats['g_m'])
+        
+        bright_eats['P'] = self.update_P(bright_eats['B'], bright_eats['g_m'])
+        
+        bright_eats['I_p'] = self.update_I_p(bright_eats['r'],
+                                             bright_eats['nu_m'],
+                                             bright_eats['P'])
+        
+        bright_eats['dL'] = self.update_dL(bright_eats['r'],
+                                           bright_eats['Th'],
+                                           bright_eats['I_p'],
+                                           bright_eats['delta'])
+        
+        bright_eats['nu'] = self.update_nu(bright_eats['delta'])
+
+        bright_eats['I_nu'] = self.update_I_nu(bright_eats['nu_m'],
+                                               bright_eats['nu'],
+                                               bright_eats['I_p'],
+                                               bright_eats['P'])
+        
+        bright_eats['I_nu_obs'] = self.boost_intensity(bright_eats['I_nu'],
+                                                       bright_eats['delta'])
+        
+        bright_eats['dL_nu'] = self.update_dL(bright_eats['r'],
+                                              bright_eats['Th'],
+                                              bright_eats['I_nu'],
+                                              bright_eats['delta'])
+                
         return(bright_eats)     
         
-    def add_luminosity(self, step):
+    def add_luminosity(self, step, col = 'dL_nu'):
         # sum all of the luminosity bins and put them in the lightcurve array
-        self.lightcurve[step,0] = np.nansum(self.eats[:,16][np.isfinite(self.eats[:,16])])            
+        self.lightcurve[step,0] = self.t_lab           
         # put the current timestep in the other column of the lightcurve array
-        #self.lightcurve[step,0] = np.nanmean(self.eats[:, 16])
-        self.lightcurve[step,1] = self.t_lab            
+        self.lightcurve[step,1] = np.nansum(self.eats[col][np.isfinite(self.eats[col])])            
 
     def time_evolve(self, nsteps):
         # for every timestep, pass the output of altonbrown() to
@@ -239,12 +265,14 @@ class Lightcurve(object):
                                               numbins = self.numbins,
                                               alpha = 0,
                                               delta = 0)
-                                              
-        self.eats = np.zeros((len(init_dark_eats), 17))
-        self.eats[:,0:3] = init_dark_eats
-        self.eats[:, 4] = self.lorentz_per_omega()
-        self.eats[:, 5] = self.lorentz_per_omega()
-        self.M_0_inv = self.initialize_M_0_inv()
+        self.eats = np.zeros(len(init_dark_eats), dtype = self.colnames)
+        self.eats['r'] = init_dark_eats['r']
+        self.eats['Th'] = init_dark_eats['Th']
+        self.eats['Ph'] = init_dark_eats['Ph']
+        self.eats['G_0'] = self.lorentz_per_omega(self.eats['Th'])
+        self.eats['G_j'] = self.lorentz_per_omega(self.eats['Th'])
+        self.M_0_inv = self.initialize_M_0_inv(self.lorentz_per_omega(self.eats['Th']),
+                                               self.energy_per_omega(self.eats['Th']))
         # this is where I store how long the last 200 timesteps took in order to
         # estimate time remaining
         times = np.zeros(400)
@@ -255,7 +283,7 @@ class Lightcurve(object):
             t1 = time()
             
             
-            new_eats = altonbrown.good_eats(G_sh = self.eats[0,4],
+            new_eats = altonbrown.good_eats(G_sh = self.eats['G_0'][0],
                                             t = self.t_lab,
                                             r_dec = 1e16,
                                             numbins = self.numbins,
@@ -286,12 +314,11 @@ class Lightcurve(object):
             times[step%400] = t2 - t1
 
 
-
     ####################################
     ###   Plotting and movie making  ###
     ####################################
     def movie_maker(self, step, nsteps):
-        if step % 100 == 0:
+        if step % 10 == 0:
             if self.movie == "comparison":
                 self.plot_both(savefig = True,
                                      fname = "movies/comparison/comp_{}.png".format(step))
@@ -308,90 +335,73 @@ class Lightcurve(object):
                 raise ValueError("{} is not a valid plot".format(self.movie))
             
     def plot_lightcurve(self, savefig = False, fname = "lightcurve.pdf", ax = False):        
-        time = self.lightcurve[:,1]/86400
-        luminosity = self.lightcurve[:,0]
+        time = self.lightcurve[:,0]/86400
+        luminosity = self.lightcurve[:,1]
         
         if ax == False:
             fig = plt.figure()
             ax = fig.add_subplot(111)
             
         ax.loglog(time, luminosity, linewidth = 2)
-        ax.set_xlim(xmin = time[10])
+        ax.set_xlim(xmin = time[10], xmax = .01)
+        ax.set_ylim(1e37,1e43)
         ax.set_xlabel('t (days)')
         ax.set_ylabel(r'$L_\nu$ for $\nu = 10^{{{}}}$Hz'.format(np.int(np.log10(self.nu_obs))))
         
-        if savefig == True:
+        if savefig == False:
+            #plt.show()
+            pass
+        elif savefig == True:
             plt.savefig(fname)
-        elif savefig == False:
-            plt.show()
-        
-        if ax == False:
             plt.close()
 
     def plot_3d_heatmap(self, savefig = False, fname = "heatmap.png", ax = False):         
         # Here are the coordinates of the things I'm going to plot.  "loglum" is the
         # log of the luminosity, which is how I color the points.
-        x = self.eats[:,0] * np.sin(self.eats[:,1]) * np.cos(self.eats[:,2])
-        y = self.eats[:,0] * np.cos(self.eats[:,1])
-        z = self.eats[:,0] * np.sin(self.eats[:,1]) * np.sin(self.eats[:,2])
-        loglum = np.log10(np.nan_to_num(self.eats[:,12]))
+        x = self.eats['r'] * np.sin(self.eats['Th']) * np.cos(self.eats['Ph'])
+        y = self.eats['r'] * np.cos(self.eats['Th'])
+        z = self.eats['r'] * np.sin(self.eats['Th']) * np.sin(self.eats['Ph'])
+        loglum = np.log10(np.nan_to_num(self.eats['dL']))
         
         # If there is no axis to plot to given in the arguments, then make your own:
         if ax == False:
             fig = plt.figure()
             ax = fig.gca(projection = '3d')
-        
-            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .01, edgecolor = 'none')        
-            cb = plt.colorbar(p)
-            cb.set_clim(30,41)
+            p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none')   
+            cb = plt.colorbar(p, ax = ax)
+            cb.set_clim(35,41)
             cb.set_alpha(1)
-            cb.draw_all()
-            cb.set_label(r'$\mathrm{luminosity} \quad \left(\mathrm{erg}\> \mathrm{s}^{-1} \mathrm{cm}^{-2}\right)$')
-            cb.set_ticks([30,32,34,36,38,40])
-            cb.set_ticklabels([r"$10^{30}$",r"$10^{32}$",r"$10^{34}$",r"$10^{36}$",r"$10^{38}$",r"$10^{40}$"])
-            ax.xaxis.set_major_formatter(plt.NullFormatter())
-            ax.zaxis.set_major_formatter(plt.NullFormatter())
-            #ax.set_zlim(-3e13,3e13)
-            ax.yaxis.set_major_formatter(plt.NullFormatter())
-            #ax.set_xlim(-3e13,3e13)
-            #ax.set_ylim(0,3e16)
+            cb.draw_all()  
+            ax.set_zlim(-1e15,1e15)
+            ax.set_xlim(-1e15,1e15)
+            ax.set_ylim(0,1.5e17)
             ax.view_init(30,30)
-            ax.set_ylabel(r'$10^{16}\mathrm{cm}$', labelpad = -10)
-            ax.set_xlabel(r'$10^{13}\mathrm{cm}$', labelpad = -10)
-            ax.set_zlabel(r'$10^{13}\mathrm{cm}$', labelpad = -10)
             
             if savefig == False:
                 plt.show()
-            elif savefig == True:
+            elif savefig == True and ax == False:
                 plt.savefig(fname)
             plt.close()
 
         else:
-            p = ax.scatter(x, y, z, c = loglum, vmin = 30, vmax = 41, alpha = .01, edgecolor = 'none')     
+            p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none')   
             cb = plt.colorbar(p, ax = ax)
-            cb.set_clim(28,35)
+            cb.set_clim(35,41)
             cb.set_alpha(1)
-            cb.draw_all()
-            cb.set_label(r'$\log{L} \quad \left(\mathrm{erg}\> \mathrm{s}^{-1} \mathrm{cm}^{-2}\right)$')
-            ax.xaxis.set_major_formatter(plt.NullFormatter())
-            ax.yaxis.set_major_formatter(plt.NullFormatter())
-            ax.zaxis.set_major_formatter(plt.NullFormatter())
-            ax.set_zlim(-6e15,6e15)
-            ax.set_xlim(-6e15,6e15)
-            ax.set_ylim(0,1.5e17)
+            cb.draw_all()  
+            #ax.xaxis.set_major_formatter(plt.NullFormatter())
+            #ax.yaxis.set_major_formatter(plt.NullFormatter())
+            #ax.zaxis.set_major_formatter(plt.NullFormatter())
+            ax.set_zlim(-1e15,1e15)
+            ax.set_xlim(-1e15,1e15)
+            ax.set_ylim(0,5e16)
             ax.view_init(30,30)
-            ax.set_ylabel(r'$10^{17}\mathrm{cm}$', labelpad = -15)
-            
-            if savefig == False:
-                plt.show()
-            elif savefig == True:
-                plt.savefig(fname)
-            plt.close()
+
 
     def plot_both(self, savefig = False, fname = "comparison.png"):
         fig = plt.figure()
-        heatmap_axis = fig.add_subplot(122, projection = '3d', aspect = 0.1)
-        lightcurve_axis = fig.add_subplot(121, aspect = 1.3)
+        heatmap_axis = fig.add_subplot(122, projection = '3d')#, aspect = 0.1)
+        lightcurve_axis = fig.add_subplot(121)#, aspect = 1.3)
         self.plot_3d_heatmap(ax = heatmap_axis)
         self.plot_lightcurve(ax = lightcurve_axis)
         if savefig == False:
@@ -404,10 +414,10 @@ class Lightcurve(object):
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 10, dt = 1, t_lab = 1e3)#, movie = "heatmap")
-    test_curve.time_evolve(nsteps = 1e6)
-    #test_curve.plot_3d_heatmap(savefig = True)
-    test_curve.plot_lightcurve()
+    test_curve = Lightcurve(spatial_res = 20, dt = .001, t_lab = 0, movie = "comparison")
+    test_curve.time_evolve(nsteps = 1e4)
+    #test_curve.plot_3d_heatmap()
+    #test_curve.plot_lightcurve()
     #test_curve.plot_both()
     #print("\n",test_curve.lightcurve)
         
