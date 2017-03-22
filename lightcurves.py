@@ -12,7 +12,7 @@ All units cgs.
 from __future__ import division, print_function
 import sys
 import numpy as np
-import altonbrown_recarrays as altonbrown
+import altonbrown as altonbrown
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from time import time
@@ -50,19 +50,21 @@ class Lightcurve(object):
         self.T_c = 90  # eq. 1.  core angular size
         self.al_e = 0  # eq. 1.  shape of the energy distribution in the wings
         self.be_e = 1  # eq. 1.  smoothness between jet core and wings
-        self.G_c = 1e4 # eq. 2.  Lorentz factor at theta = 0
+        self.G_sh = 1e4 # eq. 2.  Lorentz factor of the jet at theta = 0
         self.al_g = 0  # eq. 2.  shape of the Lorentz distribution in the wings
         self.be_g = 1  # eq. 2.  smoothness between jet core and wings
         self.T_j = 1  #  Jet half-opening angle
         self.dt = dt # Timestepping interval
         self.t_lab = t_lab
+        self.t_lab0 = t_lab
+        self.t_exp = 0
         self.epsilon_B = 0.005 # in the equation for B
         self.epsilon_e = 0.01 # eq. 13.  The fraction of kinetic energy given to electrons
         self.m_p = 1.6726219e-24 # eq. 13. proton mass
         self.m_e = 9.10938e-28 # eq. 13. electron mass
-        self.e = 1.60217662e-19 # electron charge
+        self.e = 4.80320427e-10 # electron charge
         self.n = 0.1 # eq. 18. number density
-        self.E_iso = 1e53 # isotropic equivalent luminosity, E_iso = 4 * pi * epsilon
+        self.E_iso = 1e53 # isotropic equivalent energy, E_iso = 4 * pi * epsilon
                                                     # for energy-per-solid angle epsilon
        
         self.sigma_T = 6.6524e-25 # thomson cross section in cm^2               
@@ -70,8 +72,8 @@ class Lightcurve(object):
         self.nu_obs = nu_obs # observation frequency                                      
 
         numbins = spatial_res
-        self.e_c = self.E_iso/numbins
-       
+        self.e_c = self.E_iso/(numbins**2)
+        self.G_c = self.G_sh/(numbins**2)
         self.dph = (2 * np.pi)/numbins
         self.numbins = numbins # the resolution of the surface.  At the moment, r, th, and
                                    # ph are all binned with this number.
@@ -98,25 +100,31 @@ class Lightcurve(object):
                          ('dL_nu', 'float')] # dL_nu, luminosity of observed frequency
 
         # stuff that will be updated over the course of the integration
-        self.eats = 999 # The EATS, which will be recalculated at each timestep
-        self.G_j = self.G_c # jet Lorentz
+        self.eats = np.nan # The EATS, which will be recalculated at each timestep
+        self.G_j = self.G_sh # jet Lorentz
         #self.G_sh = 1 + 1.4142135623730951 * (self.G_j - 1) # Lorentz factor of the shock.
                                                             # Does writing sqrt(2) like
                                                             # this speed up the calculation?
                                                             # who's to say?
-        self.G_sh = self.G_j # vector or scalar? ask about it.        
-        self.M_0_inv = 999 # (initial fireball rest mass)^-1 as a function of angle
-        self.lightcurve = 999 # this will eventually have the array with entries for the intensity at each timestep.
+        self.M_0_inv = np.nan # (initial fireball rest mass)^-1 as a function of angle
+        self.lightcurve = np.nan # this will eventually have the array with entries for the intensity at each timestep.
     
+    def get_r_dec(self, E_iso, n, m_p, gamma):
+        denominator = gamma**2 * cc**2 * 4 * np.pi * m_p * n
+        numerator = 3 * E_iso
+        r_dec = (numerator/denominator)**(1/3)
+        if np.isnan(r_dec):
+            raise ValueError('r_dec is undefined')
+        return(r_dec)   
         
     def energy_per_omega(self, theta):
-        return(self.e_c/(1 + (theta/self.T_c)**(self.al_e * self.be_e))**(1/self.be_e))
+        return(2 * self.e_c/(1 + (theta/self.T_c)**(self.al_e * self.be_e))**(1/self.be_e))
     
     def lorentz_per_omega(self, theta):
-        return(self.G_c/(1 + (theta/self.T_c)**(self.al_g * self.be_g))**(1/self.be_g))
+        return(2 * self.G_c/(1 + (theta/self.T_c)**(self.al_g * self.be_g))**(1/self.be_g))
     
     def initialize_M_0_inv(self, lorentz_per_omega, energy_per_omega):
-        M_0_inv = lorentz_per_omega * cc ** 2 / energy_per_omega
+        M_0_inv = (lorentz_per_omega * cc ** 2) / energy_per_omega
         return(M_0_inv)
     
     def density(self):
@@ -175,11 +183,14 @@ class Lightcurve(object):
         return(self.nu_obs / delta)
 
     def update_I_nu(self, nu_m, nu, I_p, P): 
-        where_is_nu_m_greater = np.where(nu_m > nu)
-        where_is_nu_m_less = np.where(nu_m < nu)
+        
         I_nu = np.zeros(len(self.eats))
-        I_nu[where_is_nu_m_greater] = I_p[where_is_nu_m_greater] * (nu[where_is_nu_m_greater] / nu_m[where_is_nu_m_greater])**(1/3)
-        I_nu[where_is_nu_m_less] = I_p[where_is_nu_m_less] * (nu[where_is_nu_m_less] / nu_m[where_is_nu_m_less])**(-(P[where_is_nu_m_less] - 1)/2)
+        
+        for i in xrange(len(I_p)):
+            if nu_m[i] > nu[i]:
+                I_nu[i] = I_p[i] * (nu[i] / nu_m[i])**(1/3)
+            elif nu_m[i] < nu[i]:
+                I_nu[i] = I_p[i] * (nu[i] / nu_m[i])**((P[i] - 1)/2)
         
         return(I_nu)
     
@@ -246,22 +257,23 @@ class Lightcurve(object):
                 
         return(bright_eats)     
         
-    def add_luminosity(self, step, col = 'dL_nu'):
+    def add_luminosity(self, step, col = 'I_p'):
         # sum all of the luminosity bins and put them in the lightcurve array
         self.lightcurve[step,0] = self.t_lab           
         # put the current timestep in the other column of the lightcurve array
         self.lightcurve[step,1] = np.nansum(self.eats[col][np.isfinite(self.eats[col])])            
 
-    def time_evolve(self, nsteps):
+    def time_evolve(self, nsteps, status = True):
         # for every timestep, pass the output of altonbrown() to
         # do_all_the_calcs(), whose output is all of the data for the current
         # timestep.  Then, sum the intensity column and record that sum in the
         # lightcurve array.
         nsteps = int(nsteps)
         self.lightcurve = np.zeros((nsteps,2))
-        init_dark_eats = altonbrown.good_eats(G_sh = 1e4,
+        init_r_dec = self.get_r_dec(self.E_iso, self.n, self.m_p, self.G_c)
+        init_dark_eats = altonbrown.good_eats(G_sh = self.G_c,
                                               t = self.t_lab,
-                                              r_dec = 1e16,
+                                              r_dec = init_r_dec,
                                               numbins = self.numbins,
                                               alpha = 0,
                                               delta = 0)
@@ -276,16 +288,14 @@ class Lightcurve(object):
         # this is where I store how long the last 200 timesteps took in order to
         # estimate time remaining
         times = np.zeros(400)
-        
         for step in xrange(1,nsteps):
             
             # start the clock to time the calculation to estimate how long it'll take
             t1 = time()
             
-            
             new_eats = altonbrown.good_eats(G_sh = self.eats['G_0'][0],
                                             t = self.t_lab,
-                                            r_dec = 1e16,
+                                            r_dec = init_r_dec,
                                             numbins = self.numbins,
                                             alpha = 0,
                                             delta = 0)
@@ -297,13 +307,15 @@ class Lightcurve(object):
             self.add_luminosity(step)
             
             # advance the timestep
+            self.t_exp += self.dt
+            self.t_lab = 10**self.t_exp
             self.t_lab += self.dt
-
-            # this is the progress text in terminal.
-            sys.stdout.write("\r{}% of the integration complete, {}-ish minutes remaining".format((100 * step/nsteps),
-                                                                                                  (np.round((np.mean(times[np.where(times!=0)]) * (nsteps - step))/60,
-                                                                                                            decimals=1))))
-            sys.stdout.flush()
+            if status == True:
+                # this is the progress text in terminal.
+                sys.stdout.write("\r{}% of the integration complete, {}-ish minutes remaining".format((100 * step/nsteps),
+                                                                                                      (np.round((np.mean(times[np.where(times!=0)]) * (nsteps - step))/60,
+                                                                                                                decimals=1))))
+                sys.stdout.flush()
             
             
             if self.movie is not False:
@@ -343,11 +355,12 @@ class Lightcurve(object):
             ax = fig.add_subplot(111)
             
         ax.loglog(time, luminosity, linewidth = 2)
-        ax.set_xlim(xmin = time[10], xmax = .01)
-        ax.set_ylim(1e37,1e43)
+        ax.set_xlim(xmin = time[0], xmax = 1e5)
+        #ax.set_ylim(1e37,1e43)
         ax.set_xlabel('t (days)')
-        ax.set_ylabel(r'$L_\nu$ for $\nu = 10^{{{}}}$Hz'.format(np.int(np.log10(self.nu_obs))))
-        
+        ax.set_ylabel(r'$L_\nu$ for $\nu = {{{}}} $ Hz'.format(self.nu_obs))
+        timestamp = "T = {:.2E} s".format(self.t_lab)
+        ax.text(0,2.2, timestamp, transform=ax.transAxes, fontsize = 20)
         if savefig == False:
             #plt.show()
             pass
@@ -386,22 +399,23 @@ class Lightcurve(object):
         else:
             p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none')   
             cb = plt.colorbar(p, ax = ax)
-            cb.set_clim(35,41)
+            cb.set_clim(18,30)
             cb.set_alpha(1)
-            cb.draw_all()  
+            cb.draw_all()
+            cb.set_label(r'$\log\left(dL_\nu\right)$')  
             #ax.xaxis.set_major_formatter(plt.NullFormatter())
             #ax.yaxis.set_major_formatter(plt.NullFormatter())
             #ax.zaxis.set_major_formatter(plt.NullFormatter())
-            ax.set_zlim(-1e15,1e15)
-            ax.set_xlim(-1e15,1e15)
-            ax.set_ylim(0,5e16)
+            #ax.set_zlim(-1e18,1e18)
+            #ax.set_xlim(-1e18,1e18)
+            #ax.set_ylim(0,5e18)
             ax.view_init(30,30)
 
 
     def plot_both(self, savefig = False, fname = "comparison.png"):
         fig = plt.figure()
-        heatmap_axis = fig.add_subplot(122, projection = '3d')#, aspect = 0.1)
-        lightcurve_axis = fig.add_subplot(121)#, aspect = 1.3)
+        heatmap_axis = fig.add_subplot(211, projection = '3d')#, aspect = .005)
+        lightcurve_axis = fig.add_subplot(212)#, aspect = 1.3)
         self.plot_3d_heatmap(ax = heatmap_axis)
         self.plot_lightcurve(ax = lightcurve_axis)
         if savefig == False:
@@ -414,10 +428,11 @@ class Lightcurve(object):
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 20, dt = .001, t_lab = 0, movie = "comparison")
-    test_curve.time_evolve(nsteps = 1e4)
+    test_curve = Lightcurve(spatial_res = 40, dt = .01, t_lab = 0)
+    test_curve.time_evolve(nsteps = 1e3)
     #test_curve.plot_3d_heatmap()
-    #test_curve.plot_lightcurve()
+    test_curve.plot_lightcurve()
+    plt.show()
     #test_curve.plot_both()
     #print("\n",test_curve.lightcurve)
         
