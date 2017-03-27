@@ -34,7 +34,7 @@ def n(alpha, delta):
 def tau(t,t_dec):
     return(t / t_dec)
 
-def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
+def theta_from_r(G_sh, t, t_dec, r, r_dec, alpha, delta):
     radical = (tau(t,t_dec)/a(r,r_dec)) - (a(r,r_dec)**(2*n(alpha, delta))/(2*n(alpha, delta) + 1))
     ret = 2 * np.arcsin((2 * G_sh)**(-1) * np.sqrt(radical))
     ret = np.nan_to_num(ret)
@@ -75,7 +75,7 @@ def good_eats(G_sh, t, r_dec, numbins, alpha, delta, calculation_method = "analy
         Fast, but returns gibberish at large times because of the arcsin.
         """
         r_vals = np.linspace(0, r_lim, numbins, endpoint=True)
-        theta_vals = theta_func(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
+        theta_vals = theta_from_r(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
     
     elif calculation_method == "numerical":
         """
