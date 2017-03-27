@@ -20,6 +20,7 @@ All equations from Panaitescu&Meszaros 1998, all units cgs.
 """
 from __future__ import division, print_function
 import numpy as np
+from scipy import optimize
 
 cc = 29979245800. # speed of light in cm/s
 
@@ -39,6 +40,12 @@ def theta_func(G_sh, t, t_dec, r, r_dec, alpha, delta):
     ret = np.nan_to_num(ret)
     return(ret)
 
+def r_from_theta(r, r_dec, theta, t, t_dec, G_sh, alpha, beta):
+    first_term = (2 * G_sh * np.sin(theta/2))
+    second_term = (t / t_dec) / (r / r_dec)
+    third_term = ((r / r_dec)**(2 * n(alpha, beta)))/(2 * n(alpha,beta) + 1)
+    return((first_term**2) - second_term + third_term)
+
 def get_rlim(G_sh, t, r_dec, alpha, delta):
     """
     The sqrt in the theta equation gives imaginary nums for r's after a limit set by
@@ -53,16 +60,46 @@ def get_t_dec(G, r_dec):
     t_dec = r_dec / (2 * G ** 2 * cc)
     return(t_dec)
 
-def good_eats(G_sh, t, r_dec, numbins, alpha, delta):
+def good_eats(G_sh, t, r_dec, numbins, alpha, delta, calculation_method = "analytical"):
     t_dec = get_t_dec(G_sh, r_dec)
     
     # get the furthest radius    
     r_lim = get_rlim(G_sh, t, r_dec, alpha = 0, delta = 0)
     
     # r, theta values for one phi slice
-    r_vals = np.linspace(0, r_lim, numbins, endpoint=True)
-    theta_vals = theta_func(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
-
+    
+    
+    if calculation_method == "analytical":
+        """
+        This is the analytical method which returns theta values from a range of r values.
+        Fast, but returns gibberish at large times because of the arcsin.
+        """
+        r_vals = np.linspace(0, r_lim, numbins, endpoint=True)
+        theta_vals = theta_func(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
+    
+    elif calculation_method == "numerical":
+        """
+        This is the numerical root-finding method which returns r values from a range of
+        theta values.
+        Slow, but always returns correct values.  Also requires much higher resolution,
+        especially at small times (t<1e3s or so), because the radius is very sensitive to
+        small changes in theta.
+        """
+        theta_vals = np.linspace(0., np.pi, numbins, endpoint = False)
+        r_vals = np.zeros_like(theta_vals)
+        for i in xrange(len(theta_vals)):
+            Th = theta_vals[i]
+            r_vals[i] = optimize.brentq(r_from_theta,
+                                        0.01,
+                                        r_lim + r_lim/10,
+                                        args = (r_dec,
+                                                Th,
+                                                t,
+                                                t_dec,
+                                                G_sh,
+                                                alpha,
+                                                delta))
+    
     
     # This is the array which will hold the coordinates of the middle of each bin of the
     # surface.
@@ -93,15 +130,23 @@ if __name__ == "__main__":
     for i in xrange(100):
         start = time()
         test_eats = good_eats(G_sh = 1e4,
-                                  t = 100,
+                                  t = 10,
                                   r_dec = 1e16,
                                   numbins = 1000,
                                   alpha = 0,
-                                  delta = 0)
+                                  delta = 0,
+                                  calculation_method = "numerical")
         end = time()
         times.append(end-start)
     print("Computation time:", np.mean(times))
 
+    #phi slice test plot
+    numbins = int(np.sqrt(len(test_eats['r'])))
+    y = test_eats['r'][0:numbins] * np.sin(test_eats['Th'][0:numbins])
+    x = test_eats['r'][0:numbins] * np.cos(test_eats['Th'][0:numbins])
+    plt.plot(x,y, linewidth = 3)
+
+    """
     #3d test plot
     fig = plt.figure()
     ax = fig.gca(projection = '3d')
@@ -111,7 +156,8 @@ if __name__ == "__main__":
     ax.plot(x, y, z, color = "blue", alpha = 0.1)       
     ax.xaxis.set_major_formatter(plt.NullFormatter())
     ax.zaxis.set_major_formatter(plt.NullFormatter())
-
+    ax.view_init(30,45)
+    """
 
     plt.show()
  
