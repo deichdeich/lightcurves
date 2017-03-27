@@ -12,7 +12,7 @@ All units cgs.
 from __future__ import division, print_function
 import sys
 import numpy as np
-import altonbrown as altonbrown
+import altonbrown
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from time import time
@@ -50,7 +50,7 @@ class Lightcurve(object):
         self.T_c = 90  # eq. 1.  core angular size
         self.al_e = 0  # eq. 1.  shape of the energy distribution in the wings
         self.be_e = 1  # eq. 1.  smoothness between jet core and wings
-        self.G_sh = 1e4 # eq. 2.  Lorentz factor of the jet at theta = 0
+        self.G_sh = 1e3 # eq. 2.  Lorentz factor at theta = 0
         self.al_g = 0  # eq. 2.  shape of the Lorentz distribution in the wings
         self.be_g = 1  # eq. 2.  smoothness between jet core and wings
         self.T_j = 1  #  Jet half-opening angle
@@ -64,19 +64,24 @@ class Lightcurve(object):
         self.m_e = 9.10938e-28 # eq. 13. electron mass
         self.e = 4.80320427e-10 # electron charge
         self.n = 0.1 # eq. 18. number density
-        self.E_iso = 1e53 # isotropic equivalent energy, E_iso = 4 * pi * epsilon
+        self.E_iso = 1e53 # isotropic equivalent luminosity, E_iso = 4 * pi * epsilon
                                                     # for energy-per-solid angle epsilon
        
         self.sigma_T = 6.6524e-25 # thomson cross section in cm^2               
         
         self.nu_obs = nu_obs # observation frequency                                      
+        
+        self.numbins = spatial_res # the resolution of one phi slice the surface.
+                                   # because of the way that altonbrown.py creates
+                                   # the surface, the actual surface will have numbins**2
+                                   # bins.  At the moment, r, th, and ph are all
+                                   # binned with this number.
 
-        numbins = spatial_res
-        self.e_c = self.E_iso/(numbins**2)
-        self.G_c = self.G_sh/(numbins**2)
-        self.dph = (2 * np.pi)/numbins
-        self.numbins = numbins # the resolution of the surface.  At the moment, r, th, and
-                                   # ph are all binned with this number.
+        self.dph = (2 * np.pi)/self.numbins        
+
+        self.e_c = self.E_iso/(4*np.pi)
+        self.G_c = self.G_sh/(4*np.pi)
+        
         
         self.movie = movie
         
@@ -106,6 +111,7 @@ class Lightcurve(object):
                                                             # Does writing sqrt(2) like
                                                             # this speed up the calculation?
                                                             # who's to say?
+        #self.G_sh = self.G_j # vector or scalar? ask about it.        
         self.M_0_inv = np.nan # (initial fireball rest mass)^-1 as a function of angle
         self.lightcurve = np.nan # this will eventually have the array with entries for the intensity at each timestep.
     
@@ -114,17 +120,17 @@ class Lightcurve(object):
         numerator = 3 * E_iso
         r_dec = (numerator/denominator)**(1/3)
         if np.isnan(r_dec):
-            raise ValueError('r_dec is undefined')
+            r_dec = 999
         return(r_dec)   
         
     def energy_per_omega(self, theta):
         return(2 * self.e_c/(1 + (theta/self.T_c)**(self.al_e * self.be_e))**(1/self.be_e))
-    
+        
     def lorentz_per_omega(self, theta):
         return(2 * self.G_c/(1 + (theta/self.T_c)**(self.al_g * self.be_g))**(1/self.be_g))
-    
+        
     def initialize_M_0_inv(self, lorentz_per_omega, energy_per_omega):
-        M_0_inv = (lorentz_per_omega * cc ** 2) / energy_per_omega
+        M_0_inv = lorentz_per_omega * cc ** 2 / energy_per_omega
         return(M_0_inv)
     
     def density(self):
@@ -183,7 +189,7 @@ class Lightcurve(object):
         return(self.nu_obs / delta)
 
     def update_I_nu(self, nu_m, nu, I_p, P): 
-        
+            
         I_nu = np.zeros(len(self.eats))
         
         for i in xrange(len(I_p)):
@@ -191,7 +197,6 @@ class Lightcurve(object):
                 I_nu[i] = I_p[i] * (nu[i] / nu_m[i])**(1/3)
             elif nu_m[i] < nu[i]:
                 I_nu[i] = I_p[i] * (nu[i] / nu_m[i])**((P[i] - 1)/2)
-        
         return(I_nu)
     
     def boost_intensity(self, I, delta):
@@ -257,7 +262,7 @@ class Lightcurve(object):
                 
         return(bright_eats)     
         
-    def add_luminosity(self, step, col = 'I_p'):
+    def add_luminosity(self, step, col = 'dL_nu'):
         # sum all of the luminosity bins and put them in the lightcurve array
         self.lightcurve[step,0] = self.t_lab           
         # put the current timestep in the other column of the lightcurve array
@@ -270,7 +275,7 @@ class Lightcurve(object):
         # lightcurve array.
         nsteps = int(nsteps)
         self.lightcurve = np.zeros((nsteps,2))
-        init_r_dec = self.get_r_dec(self.E_iso, self.n, self.m_p, self.G_c)
+        init_r_dec = self.get_r_dec(self.E_iso, self.n, self.m_p, self.G_sh)
         init_dark_eats = altonbrown.good_eats(G_sh = self.G_c,
                                               t = self.t_lab,
                                               r_dec = init_r_dec,
@@ -355,10 +360,10 @@ class Lightcurve(object):
             ax = fig.add_subplot(111)
             
         ax.loglog(time, luminosity, linewidth = 2)
-        ax.set_xlim(xmin = time[0], xmax = 1e5)
+        ax.set_xlim(xmin = 1e-4, xmax = 1e5)
         #ax.set_ylim(1e37,1e43)
         ax.set_xlabel('t (days)')
-        ax.set_ylabel(r'$L_\nu$ for $\nu = {{{}}} $ Hz'.format(self.nu_obs))
+        ax.set_ylabel(r'$L_\nu$ for $\nu = 10^{{{}}}$Hz'.format(np.int(np.log10(self.nu_obs))))
         timestamp = "T = {:.2E} s".format(self.t_lab)
         ax.text(0,2.2, timestamp, transform=ax.transAxes, fontsize = 20)
         if savefig == False:
@@ -428,8 +433,8 @@ class Lightcurve(object):
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 40, dt = .01, t_lab = 0)
-    test_curve.time_evolve(nsteps = 1e3)
+    test_curve = Lightcurve(spatial_res = 50, dt = .01, t_lab = 0)
+    test_curve.time_evolve(nsteps = 1e4)
     #test_curve.plot_3d_heatmap()
     test_curve.plot_lightcurve()
     plt.show()
