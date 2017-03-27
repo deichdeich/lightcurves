@@ -67,8 +67,6 @@ def good_eats(G_sh, t, r_dec, numbins, alpha, delta, calculation_method = "analy
     r_lim = get_rlim(G_sh, t, r_dec, alpha = 0, delta = 0)
     
     # r, theta values for one phi slice
-    
-    
     if calculation_method == "analytical":
         """
         This is the analytical method which returns theta values from a range of r values.
