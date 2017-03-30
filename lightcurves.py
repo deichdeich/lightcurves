@@ -401,7 +401,7 @@ class Lightcurve(object):
             plt.savefig(fname)
         plt.close()
 
-    def plot_surface(self, type, savefig = False, fname, ax = False, **kwargs):
+    def plot_surface(self, surftype, savefig = False, fname, ax = False, **kwargs):
         x = self.eats['r'] * np.sin(self.eats['Th']) * np.cos(self.eats['Ph'])
         y = self.eats['r'] * np.cos(self.eats['Th'])
         z = self.eats['r'] * np.sin(self.eats['Th']) * np.sin(self.eats['Ph'])
@@ -411,7 +411,7 @@ class Lightcurve(object):
             fig = plt.figure()
             ax = fig.gca(projection = '3d')
         
-        if type == "heatmap":
+        if surftype == "heatmap":
             loglum = np.log10(np.nan_to_num(self.eats['dL']))
             p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none', **kwargs)   
             cb = plt.colorbar(p, ax = ax)
@@ -423,7 +423,7 @@ class Lightcurve(object):
             ax.set_ylim(0,1.5e17)
             ax.view_init(45,30)
         
-        elif type == "wireframe":
+        elif surftype == "wireframe":
             ax.plot(x,y,z, **kwargs)
             ax.set_zlim(-1e15,1e15)
             ax.set_xlim(-1e15,1e15)
@@ -439,7 +439,7 @@ class Lightcurve(object):
         fig = plt.figure()
         heatmap_axis = fig.add_subplot(211, projection = '3d')#, aspect = .005)
         lightcurve_axis = fig.add_subplot(212)#, aspect = 1.3)
-        self.plot_surface(ax = heatmap_axis, type = surface_type)
+        self.plot_surface(ax = heatmap_axis, surftype = surface_type)
         self.plot_lightcurve(ax = lightcurve_axis)
         if savefig == False:
             plt.show()
