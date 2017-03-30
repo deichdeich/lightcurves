@@ -348,7 +348,7 @@ class Lightcurve(object):
                 
                 # this is the progress text in terminal.
                 prog_str = "\r{}% of the integration complete, {}-ish minutes remaining"
-                sys.stdout.write(prog_str.format(perc_done, time_remaining)
+                sys.stdout.write(prog_str.format(perc_done, time_remaining))
                 sys.stdout.flush()
             
             
@@ -379,7 +379,7 @@ class Lightcurve(object):
             else:
                 raise ValueError("{} is not a valid plot".format(self.movie))
             
-    def plot_lightcurve(self, savefig = False, fname, ax = False, **kwargs):        
+    def plot_lightcurve(self, fname = "GRBLC.png", savefig = False, ax = False, **kwargs):        
         time = self.lightcurve[:,0]/86400
         luminosity = self.lightcurve[:,1]
         
@@ -401,7 +401,7 @@ class Lightcurve(object):
             plt.savefig(fname)
         plt.close()
 
-    def plot_surface(self, surftype, savefig = False, fname, ax = False, **kwargs):
+    def plot_surface(self, surftype, savefig = False, fname = "EATS.png", ax = False, **kwargs):
         x = self.eats['r'] * np.sin(self.eats['Th']) * np.cos(self.eats['Ph'])
         y = self.eats['r'] * np.cos(self.eats['Th'])
         z = self.eats['r'] * np.sin(self.eats['Th']) * np.sin(self.eats['Ph'])
@@ -425,17 +425,14 @@ class Lightcurve(object):
         
         elif surftype == "wireframe":
             ax.plot(x,y,z, **kwargs)
-            ax.set_zlim(-1e15,1e15)
-            ax.set_xlim(-1e15,1e15)
-            ax.set_ylim(0,1.5e17)
             ax.view_init(45,30)
-        if sacefig == False and showfig == True:
+        if savefig == False and showfig == True:
             plt.show()
         elif savefig == True:
             plt.savefig(fname)
         plt.close()
 
-    def plot_both(self, savefig = False, surface_type = "heatmap", fname):
+    def plot_both(self, savefig = False, surface_type = "heatmap", fname = "comp.png"):
         fig = plt.figure()
         heatmap_axis = fig.add_subplot(211, projection = '3d')#, aspect = .005)
         lightcurve_axis = fig.add_subplot(212)#, aspect = 1.3)
@@ -450,13 +447,12 @@ class Lightcurve(object):
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 50, dt = .01, t_lab = 0)
-    test_curve.time_evolve(nsteps = 1e3)
-    #test_curve.plot_3d_heatmap()
+    test_curve = Lightcurve(spatial_res = 50, dt = .01, t_lab = 10)
+    test_curve.calc_method = "numerical"
+    test_curve.time_evolve(nsteps = 1e2)
     test_curve.plot_lightcurve()
+    test_curve.plot_surface(surftype = "wireframe")
     plt.show()
-    #test_curve.plot_both()
-    #print("\n",test_curve.lightcurve)
         
         
         
