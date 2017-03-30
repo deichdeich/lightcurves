@@ -33,7 +33,6 @@ def solid_angle(theta):
 def surface_area(r, theta, dTh, dph):
     return((r**2) * np.sin(theta) * dTh * dph)
 
-# maybe output a dictionary?  want unique mass for each theta
 def mass_from_energy(energy, lorentz):
     return(energy/(lorentz * cc**2))
     
@@ -82,6 +81,13 @@ class Lightcurve(object):
         self.e_c = self.E_iso/(4*np.pi)
         self.G_c = self.G_sh/(4*np.pi)
         
+        self.calc_method = "analytical" # the method that altonbrown uses to calculate the
+                                        # surface.
+                                        
+        self.dynamic_calculation = False # if the code sees that the surface suddenly has
+                                        # more NaN's, then it will automatically change to
+                                        # a numerical calculation.  Otherwise, it keeps
+                                        # the analytical method for the sake of speed.
         
         self.movie = movie
         
@@ -261,13 +267,28 @@ class Lightcurve(object):
                                               bright_eats['delta'])
                 
         return(bright_eats)     
-        
+
     def add_luminosity(self, step, col = 'dL_nu'):
         # sum all of the luminosity bins and put them in the lightcurve array
         self.lightcurve[step,0] = self.t_lab           
         # put the current timestep in the other column of the lightcurve array
-        self.lightcurve[step,1] = np.nansum(self.eats[col][np.isfinite(self.eats[col])])            
+        self.lightcurve[step,1] = np.nansum(self.eats[col][np.isfinite(self.eats[col])])
+    
+    def calc_method_check(self, step):
+        new_num_of_nans = len(np.where(self.eats['Th'] == 0.)[0])
+        if (self.dynamic_calculation == True and
+            self.calc_method == "analytical" and
+            step > 2):
+                if new_num_of_nans > 2 * self.numbins:
+                    print('\nChanging surface calculation method at step {}'.format(step))
+                    self.calc_method = "numerical"           
+    
+    def time_stepper(self, nsteps):
+        if nsteps != 0:
+            self.t_exp += self.dt * nsteps
+            self.t_lab = 10**self.t_exp
 
+    
     def time_evolve(self, nsteps, status = True):
         # for every timestep, pass the output of altonbrown() to
         # do_all_the_calcs(), whose output is all of the data for the current
@@ -281,7 +302,8 @@ class Lightcurve(object):
                                               r_dec = init_r_dec,
                                               numbins = self.numbins,
                                               alpha = 0,
-                                              delta = 0)
+                                              delta = 0,
+                                              calculation_method = self.calc_method)
         self.eats = np.zeros(len(init_dark_eats), dtype = self.colnames)
         self.eats['r'] = init_dark_eats['r']
         self.eats['Th'] = init_dark_eats['Th']
@@ -290,36 +312,43 @@ class Lightcurve(object):
         self.eats['G_j'] = self.lorentz_per_omega(self.eats['Th'])
         self.M_0_inv = self.initialize_M_0_inv(self.lorentz_per_omega(self.eats['Th']),
                                                self.energy_per_omega(self.eats['Th']))
-        # this is where I store how long the last 200 timesteps took in order to
+        
+        # this is where I store how long the last 400 timesteps took in order to
         # estimate time remaining
         times = np.zeros(400)
+        
         for step in xrange(1,nsteps):
+            
+            self.calc_method_check(step)
             
             # start the clock to time the calculation to estimate how long it'll take
             t1 = time()
-            
             new_eats = altonbrown.good_eats(G_sh = self.eats['G_0'][0],
                                             t = self.t_lab,
                                             r_dec = init_r_dec,
                                             numbins = self.numbins,
                                             alpha = 0,
-                                            delta = 0)
+                                            delta = 0,
+                                            calculation_method = self.calc_method)
                                             
+            # this fills the surface with calculated values
             self.eats = self.do_all_the_calcs(new_eats)
-
 
             # add the timestep to the lightcurve
             self.add_luminosity(step)
             
-            # advance the timestep
-            self.t_exp += self.dt
-            self.t_lab = 10**self.t_exp
-            self.t_lab += self.dt
+            # advance the timestep 1 step
+            self.time_stepper(1)
+            
             if status == True:
+                
+                perc_done = 100 * step/nsteps
+                mean_time = np.mean(times[np.where(times!=0)])
+                time_remaining = np.round((mean_time * (nsteps - step)/60), decimals = 1)
+                
                 # this is the progress text in terminal.
-                sys.stdout.write("\r{}% of the integration complete, {}-ish minutes remaining".format((100 * step/nsteps),
-                                                                                                      (np.round((np.mean(times[np.where(times!=0)]) * (nsteps - step))/60,
-                                                                                                                decimals=1))))
+                prog_str = "\r{}% of the integration complete, {}-ish minutes remaining"
+                sys.stdout.write(prog_str.format(perc_done, time_remaining)
                 sys.stdout.flush()
             
             
@@ -329,8 +358,7 @@ class Lightcurve(object):
             # stop the clock and add the time to the array
             t2 = time()
             times[step%400] = t2 - t1
-
-
+    
     ####################################
     ###   Plotting and movie making  ###
     ####################################
@@ -351,41 +379,41 @@ class Lightcurve(object):
             else:
                 raise ValueError("{} is not a valid plot".format(self.movie))
             
-    def plot_lightcurve(self, savefig = False, fname = "lightcurve.pdf", ax = False):        
+    def plot_lightcurve(self, savefig = False, fname, ax = False, **kwargs):        
         time = self.lightcurve[:,0]/86400
         luminosity = self.lightcurve[:,1]
         
         if ax == False:
+            showfig = True
             fig = plt.figure()
             ax = fig.add_subplot(111)
             
-        ax.loglog(time, luminosity, linewidth = 2)
+        ax.loglog(time, luminosity, linewidth = 2, **kwargs)
         ax.set_xlim(xmin = 1e-4, xmax = 1e5)
         #ax.set_ylim(1e37,1e43)
         ax.set_xlabel('t (days)')
         ax.set_ylabel(r'$L_\nu$ for $\nu = 10^{{{}}}$Hz'.format(np.int(np.log10(self.nu_obs))))
         timestamp = "T = {:.2E} s".format(self.t_lab)
         ax.text(0,2.2, timestamp, transform=ax.transAxes, fontsize = 20)
-        if savefig == False:
-            #plt.show()
-            pass
+        if savefig == False and showfig == True:
+            plt.show()
         elif savefig == True:
             plt.savefig(fname)
-            plt.close()
+        plt.close()
 
-    def plot_3d_heatmap(self, savefig = False, fname = "heatmap.png", ax = False):         
-        # Here are the coordinates of the things I'm going to plot.  "loglum" is the
-        # log of the luminosity, which is how I color the points.
+    def plot_surface(self, type, savefig = False, fname, ax = False, **kwargs):
         x = self.eats['r'] * np.sin(self.eats['Th']) * np.cos(self.eats['Ph'])
         y = self.eats['r'] * np.cos(self.eats['Th'])
         z = self.eats['r'] * np.sin(self.eats['Th']) * np.sin(self.eats['Ph'])
-        loglum = np.log10(np.nan_to_num(self.eats['dL']))
         
-        # If there is no axis to plot to given in the arguments, then make your own:
         if ax == False:
+            showfig = True
             fig = plt.figure()
             ax = fig.gca(projection = '3d')
-            p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none')   
+        
+        if type == "heatmap":
+            loglum = np.log10(np.nan_to_num(self.eats['dL']))
+            p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none', **kwargs)   
             cb = plt.colorbar(p, ax = ax)
             cb.set_clim(35,41)
             cb.set_alpha(1)
@@ -393,48 +421,37 @@ class Lightcurve(object):
             ax.set_zlim(-1e15,1e15)
             ax.set_xlim(-1e15,1e15)
             ax.set_ylim(0,1.5e17)
-            ax.view_init(30,30)
-            
-            if savefig == False:
-                plt.show()
-            elif savefig == True and ax == False:
-                plt.savefig(fname)
-            plt.close()
+            ax.view_init(45,30)
+        
+        elif type == "wireframe":
+            ax.plot(x,y,z, **kwargs)
+            ax.set_zlim(-1e15,1e15)
+            ax.set_xlim(-1e15,1e15)
+            ax.set_ylim(0,1.5e17)
+            ax.view_init(45,30)
+        if sacefig == False and showfig == True:
+            plt.show()
+        elif savefig == True:
+            plt.savefig(fname)
+        plt.close()
 
-        else:
-            p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none')   
-            cb = plt.colorbar(p, ax = ax)
-            cb.set_clim(18,30)
-            cb.set_alpha(1)
-            cb.draw_all()
-            cb.set_label(r'$\log\left(dL_\nu\right)$')  
-            #ax.xaxis.set_major_formatter(plt.NullFormatter())
-            #ax.yaxis.set_major_formatter(plt.NullFormatter())
-            #ax.zaxis.set_major_formatter(plt.NullFormatter())
-            #ax.set_zlim(-1e18,1e18)
-            #ax.set_xlim(-1e18,1e18)
-            #ax.set_ylim(0,5e18)
-            ax.view_init(30,30)
-
-
-    def plot_both(self, savefig = False, fname = "comparison.png"):
+    def plot_both(self, savefig = False, surface_type = "heatmap", fname):
         fig = plt.figure()
         heatmap_axis = fig.add_subplot(211, projection = '3d')#, aspect = .005)
         lightcurve_axis = fig.add_subplot(212)#, aspect = 1.3)
-        self.plot_3d_heatmap(ax = heatmap_axis)
+        self.plot_surface(ax = heatmap_axis, type = surface_type)
         self.plot_lightcurve(ax = lightcurve_axis)
         if savefig == False:
             plt.show()
         elif savefig == True:
             plt.savefig(fname)
-        
         plt.close()
 
 
                     
 if __name__ == "__main__":
     test_curve = Lightcurve(spatial_res = 50, dt = .01, t_lab = 0)
-    test_curve.time_evolve(nsteps = 1e4)
+    test_curve.time_evolve(nsteps = 1e3)
     #test_curve.plot_3d_heatmap()
     test_curve.plot_lightcurve()
     plt.show()
