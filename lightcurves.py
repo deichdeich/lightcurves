@@ -19,6 +19,10 @@ from time import time
 
 ### Defining global constants
 cc = 29979245800 # speed of light in cm/s
+m_p = 1.6726219e-24 # proton mass in g
+m_e = 9.10938e-28 # electron mass in g
+e = 4.80320427e-10 # electron charge in some units
+
 
 ### Some helpful functions
 def gamma_from_beta(beta):
@@ -56,7 +60,7 @@ class Lightcurve(object):
         self.dt = dt # Timestepping interval
         self.t_lab = t_lab
         self.t_lab0 = t_lab
-        self.t_exp = 0
+        self.t_exp = np.log10(t_lab)
         self.epsilon_B = 0.005 # in the equation for B
         self.epsilon_e = 0.01 # eq. 13.  The fraction of kinetic energy given to electrons
         self.m_p = 1.6726219e-24 # eq. 13. proton mass
@@ -82,7 +86,8 @@ class Lightcurve(object):
         self.G_c = self.G_sh/(4*np.pi)
         
         self.calc_method = "analytical" # the method that altonbrown uses to calculate the
-                                        # surface.
+                                        # surface.  Numerical calculation is broken at the
+                                        # moment.
                                         
         self.dynamic_calculation = False # if the code sees that the surface suddenly has
                                         # more NaN's, then it will automatically change to
@@ -108,7 +113,8 @@ class Lightcurve(object):
                          ('nu', 'float'), # nu, boosted co-moving frequency of nu_obs
                          ('I_nu', 'float'), # I_nu, co-moving intensity at observation frequency
                          ('I_nu_obs', 'float'), # I_nu_obs, observed frequency intensity boosted to detector frame
-                         ('dL_nu', 'float')] # dL_nu, luminosity of observed frequency
+                         ('dL_nu', 'float'), # dL_nu, luminosity of observed frequency
+                         ('dF_nu', 'float')] # dF_nu, flux of observed frequency
 
         # stuff that will be updated over the course of the integration
         self.eats = np.nan # The EATS, which will be recalculated at each timestep
@@ -208,6 +214,19 @@ class Lightcurve(object):
     def boost_intensity(self, I, delta):
         return(I * delta**3)
     
+    def update_dF_nu(self, I_nu, theta):
+        return(I_nu * np.cos(theta))
+    
+    def get_infinitesimals(self, dark_eats):
+        dr = dark_eats['r'] - self.eats['r']
+
+        if self.calc_method == "analytical":
+            dTh = dark_eats['Th'] - self.eats['Th']
+        elif self.calc_method == "numerical":
+            dTh = np.pi/self.numbins
+        
+        return(dr, dTh)
+    
     def do_all_the_calcs(self, dark_eats):
         # "bright_eats" is the new surface for which all the values are being calculated.
         # "dark_eats" is just the coordinate array from altonbrown.py
@@ -216,9 +235,7 @@ class Lightcurve(object):
         bright_eats = np.copy(self.eats)
         
         # This is how much the radius of each bin has changed.
-        self.dr = dark_eats['r'] - self.eats['r']
-        self.dTh = dark_eats['Th'] - self.eats['Th']
-
+        self.dr, self.dTh = self.get_infinitesimals(dark_eats)
         # The order that these are performed does matter
         bright_eats['r'] = dark_eats['r']
         
@@ -265,10 +282,13 @@ class Lightcurve(object):
                                               bright_eats['Th'],
                                               bright_eats['I_nu'],
                                               bright_eats['delta'])
+        
+        bright_eats['dF_nu'] = self.update_dF_nu(bright_eats['I_nu_obs'],
+                                                 bright_eats['Th'])
                 
         return(bright_eats)     
 
-    def add_luminosity(self, step, col = 'dL_nu'):
+    def add_column(self, step, col = 'dL_nu'):
         # sum all of the luminosity bins and put them in the lightcurve array
         self.lightcurve[step,0] = self.t_lab           
         # put the current timestep in the other column of the lightcurve array
@@ -335,7 +355,7 @@ class Lightcurve(object):
             self.eats = self.do_all_the_calcs(new_eats)
 
             # add the timestep to the lightcurve
-            self.add_luminosity(step)
+            self.add_column(step)
             
             # advance the timestep 1 step
             self.time_stepper(1)
@@ -382,7 +402,7 @@ class Lightcurve(object):
     def plot_lightcurve(self, fname = "GRBLC.png", savefig = False, ax = False, **kwargs):        
         time = self.lightcurve[:,0]/86400
         luminosity = self.lightcurve[:,1]
-        
+        showfig = False
         if ax == False:
             showfig = True
             fig = plt.figure()
@@ -399,12 +419,13 @@ class Lightcurve(object):
             plt.show()
         elif savefig == True:
             plt.savefig(fname)
-        plt.close()
 
-    def plot_surface(self, surftype, savefig = False, fname = "EATS.png", ax = False, **kwargs):
+    def plot_surface(self, surftype, color_col = 'dL_nu', savefig = False, fname = "EATS.png", ax = False, **kwargs):
         x = self.eats['r'] * np.sin(self.eats['Th']) * np.cos(self.eats['Ph'])
         y = self.eats['r'] * np.cos(self.eats['Th'])
         z = self.eats['r'] * np.sin(self.eats['Th']) * np.sin(self.eats['Ph'])
+        
+        showfig = False
         
         if ax == False:
             showfig = True
@@ -412,15 +433,15 @@ class Lightcurve(object):
             ax = fig.gca(projection = '3d')
         
         if surftype == "heatmap":
-            loglum = np.log10(np.nan_to_num(self.eats['dL']))
+            loglum = np.log10(np.nan_to_num(self.eats[color_col]))
             p = ax.scatter(x, y, z, c = loglum, edgecolor = 'none', **kwargs)   
             cb = plt.colorbar(p, ax = ax)
             cb.set_clim(35,41)
             cb.set_alpha(1)
             cb.draw_all()  
-            ax.set_zlim(-1e15,1e15)
-            ax.set_xlim(-1e15,1e15)
-            ax.set_ylim(0,1.5e17)
+            #ax.set_zlim(-1e15,1e15)
+            #ax.set_xlim(-1e15,1e15)
+            #ax.set_ylim(0,1.5e17)
             ax.view_init(45,30)
         
         elif surftype == "wireframe":
@@ -430,7 +451,6 @@ class Lightcurve(object):
             plt.show()
         elif savefig == True:
             plt.savefig(fname)
-        plt.close()
 
     def plot_both(self, savefig = False, surface_type = "heatmap", fname = "comp.png"):
         fig = plt.figure()
@@ -447,11 +467,9 @@ class Lightcurve(object):
 
                     
 if __name__ == "__main__":
-    test_curve = Lightcurve(spatial_res = 50, dt = .01, t_lab = 10)
-    test_curve.calc_method = "numerical"
-    test_curve.time_evolve(nsteps = 1e2)
+    test_curve = Lightcurve(spatial_res = 100, dt = .1, t_lab = 1e3)
+    test_curve.time_evolve(nsteps = 1e3)
     test_curve.plot_lightcurve()
-    test_curve.plot_surface(surftype = "wireframe")
     plt.show()
         
         

@@ -44,7 +44,14 @@ def r_from_theta(r, r_dec, theta, t, t_dec, G_sh, alpha, beta):
     first_term = (2 * G_sh * np.sin(theta/2))
     second_term = (t / t_dec) / (r / r_dec)
     third_term = ((r / r_dec)**(2 * n(alpha, beta)))/(2 * n(alpha,beta) + 1)
-    return((first_term**2) - second_term + third_term)
+    return(np.nan_to_num((first_term**2) - second_term + third_term))
+
+def a_from_theta(a, theta, t, r_dec, G_sh, alpha, beta):
+    tau = t / get_t_dec(G_sh, r_dec)
+    first_term = (2 * G_sh * np.sin(theta/2))
+    second_term = tau / a
+    third_term = (a**(2 * n(alpha, beta)))/(2 * n(alpha,beta) + 1)
+    return(np.nan_to_num((first_term**2) - second_term + third_term))   
 
 def get_rlim(G_sh, t, r_dec, alpha, delta):
     """
@@ -57,22 +64,20 @@ def get_rlim(G_sh, t, r_dec, alpha, delta):
     return(r_lim)
 
 def get_t_dec(G, r_dec):
-    t_dec = r_dec / (2 * G ** 2 * cc)
+    t_dec = r_dec / (2 * (G ** 2) * cc)
     return(t_dec)
 
-def good_eats(G_sh, t, r_dec, numbins, alpha, delta, calculation_method = "analytical"):
-    t_dec = get_t_dec(G_sh, r_dec)
-    
+def good_eats(G_sh, r_dec, t, numbins, alpha, delta, calculation_method = "analytical"):    
     # get the furthest radius    
     r_lim = get_rlim(G_sh, t, r_dec, alpha = 0, delta = 0)
-    
     # r, theta values for one phi slice
     if calculation_method == "analytical":
         """
         This is the analytical method which returns theta values from a range of r values.
         Fast, but returns gibberish at large times because of the arcsin.
         """
-        r_vals = np.linspace(0, r_lim, numbins, endpoint=True)
+        t_dec = get_t_dec(G_sh, r_dec)
+        r_vals = np.linspace(0, r_lim, numbins, endpoint = True)
         theta_vals = theta_from_r(G_sh, t, t_dec, r_vals, r_dec, alpha, delta)
     
     elif calculation_method == "numerical":
@@ -82,22 +87,56 @@ def good_eats(G_sh, t, r_dec, numbins, alpha, delta, calculation_method = "analy
         Slow, but always returns correct values.  Also requires much higher resolution,
         especially at small times (t<1e3s or so), because the radius is very sensitive to
         small changes in theta.
+        
+        It's broken right now.  Here's the whole story:
+        
+        First, I was calculating the surface in terms of t and r, the physical,
+        dimensionfull coordinates.  This was bad for two reasons:
+        (1) the surface is out at r ~ 1e17cm and so this gives really tiny values for
+        theta.  (2) following the radial coordinate coordinate will intersect the surface
+        (and therefore have a zero) at two places:  the back side and the front side.
+        The backside would catch it most of the time, so the front of the surface (the
+        most important part of the surface for calculating the light curve) would be very
+        sparse.
+        
+        Then, I switched to calculating it in tau and a, the nondimensionalized
+        time and radius coordinates.  This fixed the two problems above because the
+        surface only goes out to a = 25 or so, and starts near 0.  However, this required
+        me to get tau and a from t, r, t_dec, and r_dec, and it turns out that the
+        surface converges for a very narrow range of tau and a.  Additionally, the values
+        of tau for which it converges is really, really sensitive to small changes in
+        r_dec.  For a standard r_dec, the first value of tau that worked corresponded
+        to t = 1e4 seconds, which is not very helpful for the actual light curve
+        calculation.
+        
+        Then, *even if* I ignore those problems, and only calculate the light curve for a
+        very small portion of the curve, starting at t= 1e4 seconds, the actual curve
+        itself is aphysical, growing exponentially.  This is the problem for which
+        I have the least idea how to fix, because the points seem identical to the
+        analytical method, but the resulting light curve is crazy.
+        
+        So, what does work is the surface calculation for a small set of tau and a.  When
+        you compare the output of the numerical method with the analytic method for these
+        values, there's perfect correspondence.  Even better, at large times, (t > 1e7 s)
+        the numerical surface looks great, while the analytic surface implodes like
+        before.
         """
         theta_vals = np.linspace(0., np.pi, numbins, endpoint = False)
         r_vals = np.zeros_like(theta_vals)
         for i in xrange(len(theta_vals)):
             Th = theta_vals[i]
-            r_vals[i] = optimize.brentq(r_from_theta,
-                                        0.01,
+            r_vals[i] = optimize.brentq(a_from_theta,
+                                        -r_lim,
                                         r_lim + r_lim/10,
-                                        args = (r_dec,
-                                                Th,
+                                        args = (Th,
                                                 t,
-                                                t_dec,
+                                                r_dec,
                                                 G_sh,
                                                 alpha,
                                                 delta))
-    
+        #r_vals *= r_dec
+
+
     
     # This is the array which will hold the coordinates of the middle of each bin of the
     # surface.
@@ -125,25 +164,26 @@ if __name__ == "__main__":
     from mpl_toolkits.mplot3d import Axes3D
     from time import time
     times = []
-    for i in xrange(100):
+    for i in xrange(1):
         start = time()
         test_eats = good_eats(G_sh = 1e4,
-                                  t = 10,
-                                  r_dec = 1e16,
-                                  numbins = 1000,
-                                  alpha = 0,
-                                  delta = 0,
-                                  calculation_method = "numerical")
+                              r_dec = 1.1673054268071324e16,
+                              t = 10,
+                              numbins = 100,
+                              alpha = 0,
+                              delta = 0,
+                              calculation_method = "numerical")
         end = time()
         times.append(end-start)
     print("Computation time:", np.mean(times))
-
+    
     #phi slice test plot
     numbins = int(np.sqrt(len(test_eats['r'])))
     y = test_eats['r'][0:numbins] * np.sin(test_eats['Th'][0:numbins])
     x = test_eats['r'][0:numbins] * np.cos(test_eats['Th'][0:numbins])
-    plt.plot(x,y, linewidth = 3)
-
+    plt.ylim(-1,5)
+    plt.scatter(x,y, linewidth = 3)
+    
     """
     #3d test plot
     fig = plt.figure()
@@ -151,14 +191,13 @@ if __name__ == "__main__":
     x = test_eats['r'] * np.sin(test_eats['Th']) * np.cos(test_eats['Ph'])
     y = test_eats['r'] * np.cos(test_eats['Th'])
     z = test_eats['r'] * np.sin(test_eats['Th']) * np.sin(test_eats['Ph'])
-    ax.plot(x, y, z, color = "blue", alpha = 0.1)       
+    ax.scatter(x, y, z, color = "blue", alpha = 0.1)       
     ax.xaxis.set_major_formatter(plt.NullFormatter())
     ax.zaxis.set_major_formatter(plt.NullFormatter())
     ax.view_init(30,45)
-    """
-
+"""
     plt.show()
- 
+
 #    uncomment these lines to write the surface out to a CSV file.
 #    print("Writing to file...")
 #    np.savetxt("test_eats.csv", test_eats) 
