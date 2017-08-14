@@ -52,7 +52,9 @@ class Lightcurve(object):
                  radius_range = (5,20),     # log of the min and max simulated radius, cm
                  dr = .001,                 # stepsize of the radius
                  n_theta = 500,             # number of theta bins
-                 n_phi = 10):               # number of phi bins
+                 n_phi = 10,                # number of phi bins
+                 energy_distribution = None, # file path for a numerical distribution
+                 lorentz_distribution = None): # same as above
         
         ### physical parameters ###
         self.nu_obs = nu_obs
@@ -76,6 +78,17 @@ class Lightcurve(object):
         self.start_radius = radius_range[0]
         self.end_radius = radius_range[1]
         self.dr = dr
+        
+        ### time independent quantity column names ###
+        self.ti_colnames = [('r', 'float'),
+                            ('Th', 'float'),
+                            ('Ph', 'float'),
+                            ('f', 'float')
+                            ('G', 'float'),
+                            ('G_sh', 'float'),
+                            ('beta_sh', 'float'),
+                            ('t_lab', 'float')]
+        
     
 
 
@@ -149,9 +162,22 @@ class Lightcurve(object):
             
         elif self.jet_type == "structured":
             denominator = (1 + (thetas / self.theta_c)**(self.a_G * self.b_G))
-            energy_per_sa += self.G_0 / (denominator**(1/b_G))
-    
+            lorentz_per_sa += self.G_0 / (denominator**(1/b_G))
+        
         return(lorentz_per_sa)
+    
+    def make_time_independent_array(self):
+        rad = self.get_radii()
+        
+        ti_arr = np.zeros(len(rad), dtype = self.ti_colnames)
+        ti_arr['r'] = rad
+        ti_arr['f'] = self.update_f(ti_arr['r'])
+        ti_arr['G'] = self.update_G(ti_arr['f'])
+        ti_arr['G_sh'] = self.update_G_sh(ti_arr['G'])
+        ti_arr['beta_sh'] = self.update_beta_sh(ti_arr['G_sh'])
+        ti_arr['t_lab'] = self.get_t_lab(len(ti_arr['r']), ti_arr['r'], ti_arr['beta_sh'])
+        
+        return(ti_arr)
         
     def time_evolve(self, start_time = -2.5, end_time = 2.1):
         if start_time > end_time:
@@ -160,16 +186,11 @@ class Lightcurve(object):
         if start_time is None:
             start_time = t_obs[-1]
         
-        ### establish all of the quantities for the duration of the integration ###
-        ### these should all be in one recarray accessible to the whole object
-        rad = self.get_radii()
-        num_of_radii = len(rad)
-        f = self.update_f(rad)
-        G = self.update_G(f)
-        G_sh = self.update_G_sh(G)
-        beta_sh = self.update_beta_sh(G_sh)
-        t_lab = self.get_t_lab(num_of_radii, rad, beta_sh)
-        t_obs = self.get_t_obs(start_time, end_time)
+        ### establish all of the quantities for the duration of the integration
+        time_ind_vals = self.make_time_independent_array()
+        
+        ### t_obs is the clock for the lightcurve data
+        t_obs = self.get_t_obs()
         
         ### this will store the output lightcurve data
         lightcurve = np.zeros((len(t_obs),2))
