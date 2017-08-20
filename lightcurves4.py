@@ -11,12 +11,6 @@ from __future__ import division, print_function
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-"""
-yes, everything is a function of r and theta.  iterate through the possible values for
-every thing that depends on energy and lorentz, including t_lab and R_EATS
-
-make sure you can put in arbitrary arrays of energy-per-sa and lorentz-per-sa
-"""
 
 ### Some global constants ###
 cc = 3e10  # speed of light in cm/s
@@ -172,13 +166,9 @@ class Lightcurve(object):
         
             t_lab[:, i_th] += r[0] / (b_sh[0][i_th] * cc)
         
-        return(t_lab)
+        return(t_lab)        
     
-    def time_of_flight_delay(self, t_lab, rad, angle):
-        return(t_lab - (rad / cc) * np.cos(angle))
-        
-    
-    def make_time_independent_array(self):
+    def make_time_independent_dict(self):
         rad = self.get_radii()
         theta_vals = np.arange(self.d_theta/2,
                                self.theta_j,
@@ -207,22 +197,26 @@ class Lightcurve(object):
         
         ti_dict['lorentz_dist'] = self.get_lorentz_per_sa(theta_vals)
         
-        ti_dict['f_mesh'] = self.update_f(r_mesh,
-                                          ti_dict['energy_dist'],
-                                          ti_dict['lorentz_dist'])
+        ti_dict['f'] = self.update_f(r_mesh,
+                                     ti_dict['energy_dist'],
+                                     ti_dict['lorentz_dist'])
                                           
-        ti_dict['G_mesh'] = self.update_G(ti_dict['f_mesh'],
-                                          ti_dict['lorentz_dist'])
+        ti_dict['G'] = self.update_G(ti_dict['f'],
+                                     ti_dict['lorentz_dist'])
                                           
-        ti_dict['G_sh_mesh'] = self.update_G_sh(ti_dict['G_mesh'])
+        ti_dict['G_sh'] = self.update_G_sh(ti_dict['G'])
         
-        ti_dict['beta_sh_mesh'] = self.update_beta_sh(ti_dict['G_sh_mesh'])
+        ti_dict['beta_sh'] = self.update_beta_sh(ti_dict['G_sh'])
         
-        ti_dict['t_lab_mesh'] = self.get_t_lab(ti_dict['r'], ti_dict['beta_sh_mesh'])
+        ti_dict['t_lab'] = self.get_t_lab(ti_dict['r'], ti_dict['beta_sh'])
+        print("")
         
         return(ti_dict)
     
+    def time_of_flight_delay(self, t_lab, rad, angle):
+        return(t_lab - (rad / cc) * np.cos(angle))
 
+    
     def time_evolve(self, start_time = -2.5, end_time = 2.1):
         if start_time > end_time:
             raise ValueError("Make sure the start time is before the end time.  In this case, {} is after {}.".format(start_time, end_time))
@@ -231,7 +225,7 @@ class Lightcurve(object):
             start_time = t_obs[-1]
         
         ### establish all of the quantities for the duration of the integration
-        time_ind_arr = self.make_time_independent_array()
+        time_ind_dict = self.make_time_independent_dict()
         
         ### t_obs is the clock for the lightcurve data
         t_obs = self.get_t_obs(start_time, end_time)
@@ -244,8 +238,6 @@ class Lightcurve(object):
                             0,
                             np.cos(self.theta_obs)])
         
-        energy_dist = self.get_energy_per_sa(theta_vals)
-        lorentz_dist = self.get_lorentz_per_sa(theta_vals)
         
         ### creating a bunch of arrays to hold various quantities on the EATS
         ### these should all be in one recarray like above
@@ -257,29 +249,29 @@ class Lightcurve(object):
         thetas2D = np.zeros([self.n_theta, self.n_phi])
  
         for i in xrange(self.n_phi):
-            thetas2D[:, i] = theta_vals
+            thetas2D[:, i] = time_ind_dict['Th']
         
         for timestep in xrange(len(t_obs)):
             for i_theta in xrange(self.n_theta):
                 for i_phi in xrange(self.n_phi):
                     
-                    vec_axis = np.array([np.sin(theta_vals[i_theta]) * np.cos(phi_vals[i_phi]),
-                                         np.sin(theta_vals[i_theta]) * np.sin(phi_vals[i_phi]),
-                                         np.cos(theta_vals[i_theta])])
+                    vec_axis = np.array([np.sin(time_ind_dict['Th'][i_theta]) * np.cos(time_ind_dict['Ph'][i_phi]),
+                                         np.sin(time_ind_dict['Th'][i_theta]) * np.sin(time_ind_dict['Ph'][i_phi]),
+                                         np.cos(time_ind_dict['Th'][i_theta])])
                     
                     eff_theta[i_theta, i_phi] = np.arccos(np.dot(vec_axis, vec_obs))
                     
-                    time_of_flight = self.time_of_flight_delay(time_ind_arr['t_lab'],
-                                                               time_ind_arr['r'],
+                    time_of_flight = self.time_of_flight_delay(time_ind_dict['t_lab'][:, i_theta],
+                                                               time_ind_dict['r'],
                                                                eff_theta[i_theta, i_phi])
                     
                     R_EATS[i_theta, i_phi] = np.interp(t_obs[timestep],
                                                        time_of_flight,
-                                                       time_ind_arr['r'])
+                                                       time_ind_dict['r'])
                     
                     G_EATS[i_theta, i_phi] = np.interp(R_EATS[i_theta, i_phi],
-                                                       time_ind_arr['r'],
-                                                       time_ind_arr['G'])
+                                                       time_ind_dict['r'],
+                                                       time_ind_dict['G'][:, i_theta])
 
             gamma_inj = m_p / m_e * self.ee * (G_EATS - 1) + 1
             B = np.sqrt(32 * np.pi * self.eB * m_p * cc**2 * self.n_ism * (G_EATS**2 - 1))
@@ -323,8 +315,8 @@ class Lightcurve(object):
             dL_nu[jj]=Iprime_nu[jj]*delta[jj]**3*R_EATS[jj]**2*np.sin(thetas2D[jj])*self.d_theta*self.d_phi
             
             lightcurve[timestep, 1] = dL_nu.sum() 
-            prog_str = '\r timestep {} of {}.'
-            sys.stdout.write(prog_str.format(timestep, len(t_obs)))
+            prog_str = '\r Time evolving... {:.1F}%.'
+            sys.stdout.write(prog_str.format(timestep / len(t_obs) * 100))
             sys.stdout.flush()
             
         return(lightcurve)
