@@ -59,10 +59,6 @@ class Lightcurve(object):
         self.eB = eB				       # B field equipartition parameter
         self.pel = pel 					   # electron acceleration slope
         
-        if energy_distribution is not None:
-            self.theta_j = self.get_theta_j_from_data() # if the energy distribution is being read from a file, then you need to read the jet opening angle from the file, which I'll do later in the code
-        else:
-            self.theta_j = theta_j * np.pi / 180
         self.theta_obs = theta_obs * np.pi / 180
         self.jet_type = jet_type
         self.theta_c = theta_c * np.pi/180
@@ -70,8 +66,15 @@ class Lightcurve(object):
         self.b_e = b_e
         self.a_G = a_G
         self.b_G = b_G
-        self.energy_distribution = energy_distribution
-        self.lorentz_distribution = lorentz_distribution
+        self.energy_distribution = np.genfromtxt(energy_distribution)
+        if energy_distribution is not None and lorentz_distribution is not "constant":
+            self.theta_j = max(self.energy_distribution[:, 0]) # if the energy distribution is being read from a file, then you need to read the jet opening angle from the file, which I'll do later in the code
+            self.lorentz_distribution = np.genfromtxt(lorentz_distribution)
+        else:
+            self.theta_j = theta_j * np.pi / 180
+        
+        if lorentz_distribution == "constant":
+            self.lorentz_distribution = lorentz_distribution
         
         ### simulation parameters ###
         self.n_theta = n_theta
@@ -114,25 +117,24 @@ class Lightcurve(object):
         return(theta_vals)
     
     def get_ph_vals(self):
-        theta_vals = np.arange(self.d_phi/2,
+        ph_vals = np.arange(self.d_phi/2,
                                2 * np.pi,
                                self.d_phi)
-        return(phi_vals)
+        return(ph_vals)
     
     ############################        
     #### constant functions ####
     ############################
     def generate_energy_per_sa(self, thetas):
-        energy_per_sa = np.zeros_like(thetas)
         if self.jet_type == "homogenous":
-            energy_per_sa += self.E_iso
+            energy_per_sa = np.zeros_like(thetas) + self.E_iso
         
         elif self.jet_type == "structured":
             denominator = (1 + (thetas / self.theta_c)**(self.a_e * self.b_e))
-            energy_per_sa += self.E_iso / (denominator**(1 / self.b_e))
+            energy_per_sa = self.E_iso / (denominator**(1 / self.b_e))
         
         elif self.jet_type == "gaussian":
-            energy_per_sa += self.E_iso * np.exp(-((thetas**2) / (2 * self.theta_c**2)))
+            energy_per_sa = self.E_iso * np.exp(-((thetas**2) / (2 * self.theta_c**2)))
         
         elif self.jet_type == "numerical":
             energy_func = interpolate.interp1d(self.energy_distribution[:, 0],
@@ -143,13 +145,12 @@ class Lightcurve(object):
         return(energy_per_sa)
 
     def generate_lorentz_per_sa(self, thetas):
-        lorentz_per_sa = np.zeros_like(thetas)
         if self.jet_type == "homogenous" or self.jet_type == "gaussian" or self.lorentz_distribution == "constant":
-            lorentz_per_sa += self.G_0
+            lorentz_per_sa = np.zeros_like(thetas) + self.G_0
             
         elif self.jet_type == "structured":
             denominator = (1 + (thetas / self.theta_c)**(self.a_G * self.b_G))
-            lorentz_per_sa += self.G_0 / (denominator**(1 / self.b_G))
+            lorentz_per_sa = self.G_0 / (denominator**(1 / self.b_G))
         
         elif self.jet_type == "numerical" and self.lorentz_distribution is not "constant":
             lorentz_func = interpolate.interp1d(self.lorentz_distribution[:, 0],
@@ -158,7 +159,7 @@ class Lightcurve(object):
         
         return(lorentz_per_sa)
     
-    def get_radii(self):
+    def get_r_vals(self):
         radii = self.logrange(self.start_radius,
                               self.end_radius,
                               self.dr)
@@ -210,13 +211,11 @@ class Lightcurve(object):
         print('')
         return(t_lab)        
     
-    # this returns a dictionary instead of an array because it's not super memory intensive
-    # and it holds both the radius arrays (which are 1 x n_rad) and the meshes (which are
-    # n_rad x n_theta)
+
     def make_time_independent_dict(self):
 
         r_mesh, th_mesh = np.meshgrid(self.r_vals,
-                                      self.theta_vals,
+                                      self.th_vals,
                                       indexing = 'ij')
 
         
@@ -236,9 +235,9 @@ class Lightcurve(object):
         
         ti_arr['th_mesh'] = th_mesh
         
-        ti_arr['energy_dist'] = self.get_energy_per_sa(self.theta_vals)
+        ti_arr['energy_dist'] = self.generate_energy_per_sa(self.th_vals)
         
-        ti_arr['lorentz_dist'] = self.get_lorentz_per_sa(self.theta_vals)
+        ti_arr['lorentz_dist'] = self.generate_lorentz_per_sa(self.th_vals)
         
         ti_arr['f'] = self.get_f(r_mesh,
                                  ti_arr['energy_dist'],
@@ -266,7 +265,7 @@ class Lightcurve(object):
     
     
     ############################
-    #### variable functions ####
+    #### updating functions ####
     ############################
     def update_gamma_inj(self, g_eats):
         return(m_p / m_e * self.ee * (g_eats - 1) + 1)
@@ -274,14 +273,14 @@ class Lightcurve(object):
     def update_B(self, g_eats):
         return(np.sqrt(32 * np.pi * self.eB * m_p * cc**2 * self.n_ism * (g_eats**2 - 1)))
 
-    def update_nu_inj(self, gamma_inj):
+    def update_nu_inj(self, gamma_inj, B):
         return((0.25 * e * gamma_inj**2 * B) / (m_e * cc))
     
     def update_gamma_cool(self, g_eats, r_eats, B):
         return(15 * np.pi * m_e * cc**2 * np.sqrt(g_eats**2 - 1) / (sT * B**2 * r_eats))
         
-    def update_nu_cool(self, gamma_cool):
-        retrun(0.25 * e * gamma_cool**2 * B / (m_e * cc))
+    def update_nu_cool(self, gamma_cool, B):
+        return(0.25 * e * gamma_cool**2 * B / (m_e * cc))
     
     def update_Pprime(self, B, gamma_inj):
          return((4 / 3) * sT * cc * B**2 / (8 * np.pi) * (gamma_inj**2 - 1))
@@ -289,13 +288,13 @@ class Lightcurve(object):
     def update_B_EATS(self, g_eats):
         return(np.sqrt(1 - (1 / g_eats**2)))
     
-    def update delta(self, g_eats, b_eats, eff_theta)
+    def update_delta(self, g_eats, b_eats, eff_theta):
         return(1 / (g_eats * (1 - b_eats * np.cos(eff_theta))))
     
     def update_nu_prime(self, delta):
         return(self.nu_obs / delta)
     
-    def update_Iprime_nu(self, r_eats, nu_cool, nu_inj, nu_prime):      
+    def update_Iprime_nu(self, r_eats, nu_cool, nu_inj, nu_prime, Pprime):      
         Iprime_nu = np.zeros_like(r_eats)
         
         nu_cool_greater = np.where(nu_cool > nu_inj)
@@ -335,18 +334,16 @@ class Lightcurve(object):
             
         return(Iprime_nu)
     
-    def update_dL_nu(self, r_eats, Iprime_nu, thetas2D):
+    def update_dL_nu(self, r_eats, Iprime_nu, thetas2D, nu_cool, nu_inj, delta):
         dL_nu = np.zeros_like(Iprime_nu)
-        
         nu_cool_greater = np.where(nu_cool > nu_inj)
         if nu_cool_greater[0].size > 0:  
-            dL_nu = Iprime_nu[nu_cool_greater] * delta[nu_cool_greater]**3 * r_eats[nu_cool_greater]**2 * np.sin(thetas2D[nu_cool_greater]) * self.d_theta * self.d_phi
+            dL_nu[nu_cool_greater] = Iprime_nu[nu_cool_greater] * delta[nu_cool_greater]**3 * r_eats[nu_cool_greater]**2 * np.sin(thetas2D[nu_cool_greater]) * self.d_theta * self.d_phi
         
         nu_cool_less = np.where(nu_cool <= nu_inj)
         if nu_cool_less[0].size > 0:
-            dL_nu = Iprime_nu[nu_cool_less] * delta[nu_cool_less]**3 * r_eats[nu_cool_less]**2 * np.sin(thetas2D[nu_cool_less]) * self.d_theta * self.d_phi
-
-    return(dL_nu)
+            dL_nu[nu_cool_less] = Iprime_nu[nu_cool_less] * delta[nu_cool_less]**3 * r_eats[nu_cool_less]**2 * np.sin(thetas2D[nu_cool_less]) * self.d_theta * self.d_phi
+        return(dL_nu)
             
     
     def make_EATS_arr(self):
@@ -367,20 +364,22 @@ class Lightcurve(object):
                        ('dL_nu', 'float')]
                        
         EATS_array = np.zeros([self.n_theta, self.n_phi], dtype = EATS_dtypes)
-        return()
+        return(EATS_array)
     
     def update_EATS_arr(self, EATS_arr):    
         EATS_arr['gamma_inj'] = self.update_gamma_inj(EATS_arr['G_EATS'])
         
         EATS_arr['B'] = self.update_B(EATS_arr['G_EATS'])
         
-        EATS_arr['nu_inj'] = self.update_nu_inj(EATS_arr['gamma_inj'])
+        EATS_arr['nu_inj'] = self.update_nu_inj(EATS_arr['gamma_inj'],
+                                                EATS_arr['B'])
         
         EATS_arr['gamma_cool'] = self.update_gamma_cool(EATS_arr['G_EATS'],
                                                         EATS_arr['R_EATS'],
                                                         EATS_arr['B'])
         
-        EATS_arr['nu_cool'] = self.update_nu_cool(EATS_arr['gamma_cool'])
+        EATS_arr['nu_cool'] = self.update_nu_cool(EATS_arr['gamma_cool'],
+                                                  EATS_arr['B'])
         
         EATS_arr['Pprime'] = self.update_Pprime(EATS_arr['B'], EATS_arr['gamma_inj'])
         
@@ -395,9 +394,15 @@ class Lightcurve(object):
         EATS_arr['Iprime_nu'] = self.update_Iprime_nu(EATS_arr['R_EATS'],
                                                       EATS_arr['nu_cool'],
                                                       EATS_arr['nu_inj'],
-                                                      EATS_arr['nu_prime'])
+                                                      EATS_arr['nu_prime'],
+                                                      EATS_arr['Pprime'])
         
-        EATS_arr['dL_nu'] = self.update_dL_nu(EATS_arr['Iprime_nu', EATS_arr['thetas2D']])
+        EATS_arr['dL_nu'] = self.update_dL_nu(EATS_arr['R_EATS'],
+                                              EATS_arr['Iprime_nu'],
+                                              EATS_arr['thetas2D'],
+                                              EATS_arr['nu_cool'],
+                                              EATS_arr['nu_inj'],
+                                              EATS_arr['delta'])
         return(EATS_arr)
     ###############
     
@@ -426,7 +431,7 @@ class Lightcurve(object):
         
         # update all the quantities like gamma_inj, B, nu_inj etc...
         EATS_arr = self.make_EATS_arr()
-        EATS_arr['thetas2D'] = np.meshgrid(time_ind_arr['Th'], time_ind_arr['Ph'])[0]
+        EATS_arr['thetas2D'] = np.meshgrid(self.th_vals, self.ph_vals)[0].T
         
         for timestep in xrange(len(t_obs)):
             for i_theta in xrange(self.n_theta):
@@ -442,7 +447,7 @@ class Lightcurve(object):
                     
                     time_of_flight = self.time_of_flight_delay(time_ind_arr['t_lab'][:, i_theta],
                                                                self.r_vals,
-                                                               eff_theta[i_theta, i_phi])
+                                                               EATS_arr['eff_theta'][i_theta, i_phi])
                     
                     EATS_arr['R_EATS'][i_theta, i_phi] = np.interp(t_obs[timestep],
                                                                    time_of_flight,
@@ -455,7 +460,7 @@ class Lightcurve(object):
 
             
             ### Calculate all the quantities associated with the new surface
-            EATS_arr = self.update_EATS_vals(EATS_arr)
+            EATS_arr = self.update_EATS_arr(EATS_arr)
             
             ### Add the luminosity to the lightcurve at this timestep
             lightcurve[timestep, 1] = EATS_arr['dL_nu'].sum() 
