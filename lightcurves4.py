@@ -11,8 +11,6 @@ All equation numbers refer to Rossi et al. (2002) unless otherwise noted.
 
 Based on code by D. Lazzati at Oregon State University,
 lazzatid@science.oregonstate.edu
-
-This version currently fails for G_0 > 2739.
 """
 from __future__ import division, print_function
 import numpy as np
@@ -54,8 +52,8 @@ class Lightcurve(object):
                  b_e = 1,
                  a_G = 1,
                  b_G = 1,
-                 theta_c = 90,                   # core angular size, degrees- refer to Rossi.
-                 z = 1.):                      # redshift
+                 theta_c = 90,              # core angular size, degrees- refer to Rossi.
+                 z = 1.):                   # redshift
         
         ### physical parameters ###
         self.nu_obs = nu_obs               # observing frequency
