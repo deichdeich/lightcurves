@@ -33,9 +33,9 @@ class Lightcurve(object):
                  ### simulation parameters ###
                  n_theta,                      # number of theta bins
                  n_phi,                        # number of phi bins
-                 dt = .001,                    # timestep size, in seconds
+                 dt = .1,                    # timestep size, in seconds
                  radius_range = (5,20),        # log of the min and max simulated radius, cm
-                 dr = .001,                    # stepsize of the radius
+                 dr = .1,                    # stepsize of the radius
                  energy_distribution = None,   # file path for a numerical distribution
                  lorentz_distribution = None, # same as above, can specify "constant"
                  
@@ -75,6 +75,8 @@ class Lightcurve(object):
         self.b_G = b_G
         self.z = z
         
+        self.vec_obs = np.array([np.sin(self.theta_obs), 0, np.cos(self.theta_obs)])
+        
         
         if energy_distribution is not None:
             self.energy_distribution = np.genfromtxt(energy_distribution)
@@ -105,6 +107,7 @@ class Lightcurve(object):
         self.th_vals = self.get_theta_vals()
         self.ph_vals = self.get_ph_vals()
     
+        self.EATSarr = 999
     
     # can't extrapolate from the data, so you have to read the jet opening angle directly
     # from the energy and lorentz input data.  if they don't agree, it's bad.
@@ -134,15 +137,11 @@ class Lightcurve(object):
     
     
     def get_theta_vals(self):
-        theta_vals = np.arange(self.d_theta/2,
-                               self.theta_j,
-                               self.d_theta)
+        theta_vals = np.arange(self.d_theta / 2, self.theta_j, self.d_theta)
         return(theta_vals)
     
     def get_ph_vals(self):
-        ph_vals = np.arange(self.d_phi/2,
-                               2 * np.pi,
-                               self.d_phi)
+        ph_vals = np.arange(self.d_phi / 2, 2 * np.pi, self.d_phi)
         return(ph_vals)
     
     ############################        
@@ -197,7 +196,7 @@ class Lightcurve(object):
     
     def get_f(self, r, energy_dist, G_dist):
         #  eq. 5
-        f = G_dist * cc**2 / energy_dist * 4 * np.pi / 3. * self.n_ism * m_p * r**3
+        f = ((G_dist * cc**2) / energy_dist) * ((4/3) * np.pi) * self.n_ism * m_p * r**3
         return(f)
     
     def get_G(self, f, G_dist):
@@ -206,11 +205,10 @@ class Lightcurve(object):
         denominator = 2 * f
         G = (np.sqrt(numerator) - 1) / denominator
         
-        ### check for if it is bigger than G_0, and change everything up until then
+        ### check for where it is bigger than G_0, and change everything up until then
         greater_than_G_0 = np.where(G > self.G_0)[0]
         if greater_than_G_0.size > 0:
             G[:greater_than_G_0[-1]] = self.G_0
-        
         return(G)
     
     def get_G_sh(self, G):
@@ -241,7 +239,7 @@ class Lightcurve(object):
                 t_lab[i_r][i_th] = np.trapz(1 / (cc * b_sh[:i_r+1, i_th]),
                                             x = r[:i_r+1])
         
-            t_lab[:, i_th] += r[0] / (b_sh[0][i_th] * cc)
+            t_lab[:, i_th] += r[0] / (b_sh[0, i_th] * cc)
         
         print('')
         return(t_lab)        
@@ -257,15 +255,15 @@ class Lightcurve(object):
                                       indexing = 'ij')
 
         
-        ti_arr_dtypes = [('r_grid', 'float'),
-                         ('th_grid', 'float'),
-                         ('energy_dist', 'float'),
-                         ('lorentz_dist', 'float'),
-                         ('f', 'float'),
-                         ('G', 'float'),
-                         ('G_sh', 'float'),
-                         ('beta_sh', 'float'),
-                         ('t_lab', 'float')]
+        ti_arr_dtypes = [('r_grid', 'f8'),
+                         ('th_grid', 'f8'),
+                         ('energy_dist', 'f8'),
+                         ('lorentz_dist', 'f8'),
+                         ('f', 'f8'),
+                         ('G', 'f8'),
+                         ('G_sh', 'f8'),
+                         ('beta_sh', 'f8'),
+                         ('t_lab', 'f8')]
         
         ti_arr = np.zeros_like(r_grid, dtype = ti_arr_dtypes)
         
@@ -273,9 +271,9 @@ class Lightcurve(object):
         
         ti_arr['th_grid'] = th_grid
         
-        ti_arr['energy_dist'] = self.generate_energy_per_sa(self.th_vals)
+        ti_arr['energy_dist'] = self.generate_energy_per_sa(th_grid)
         
-        ti_arr['lorentz_dist'] = self.generate_lorentz_per_sa(self.th_vals)
+        ti_arr['lorentz_dist'] = self.generate_lorentz_per_sa(th_grid)
         
         ti_arr['f'] = self.get_f(r_grid,
                                  ti_arr['energy_dist'],
@@ -285,7 +283,7 @@ class Lightcurve(object):
                                  ti_arr['lorentz_dist'])
                                           
         ti_arr['G_sh'] = self.get_G_sh(ti_arr['G'])
-        
+
         ti_arr['beta_sh'] = self.get_beta_sh(ti_arr['G_sh'])
         
         ti_arr['t_lab'] = self.get_t_lab(self.r_vals,
@@ -315,7 +313,7 @@ class Lightcurve(object):
 
     def update_gamma_cool(self, g_eats, r_eats, B):
         # eq. 14
-        return(15 * np.pi * m_e * cc**2 * np.sqrt(g_eats**2 - 1) / (sT * B**2 * r_eats))
+        return(15 * np.pi * m_e * cc**2 * np.sqrt(g_eats**2 - 1) / sT / B**2 / r_eats)
     
     def update_B(self, g_eats):
         # eq. 15
@@ -323,92 +321,99 @@ class Lightcurve(object):
 
     def update_nu_inj(self, gamma_inj, B):
         # eq. 16
-        return((0.25 * e * gamma_inj**2 * B) / (m_e * cc))
+        return(0.25 * e * gamma_inj**2 * B / m_e / cc)
     
     def update_nu_cool(self, gamma_cool, B):
         # eq. 16
-        return(0.25 * e * gamma_cool**2 * B / (m_e * cc))
+        return(0.25 * e * gamma_cool**2 * B / m_e / cc)
     
     def update_Pprime(self, B, gamma_inj):
         # in the paragraph after eq. 18
-         return((4 / 3) * sT * cc * (B**2 / (8 * np.pi)) * (gamma_inj**2 - 1))
+         return(4. / 3. * sT * cc * B**2 / 8 / np.pi * (gamma_inj**2 - 1))
     
     def update_delta(self, g_eats, b_eats, eff_theta):
         # in the paragraph after eq. 19
-        return(1 / (g_eats * (1 - b_eats * np.cos(eff_theta))))
+        return(1. / g_eats / (1. - b_eats * np.cos(eff_theta)))
     
     def update_nu_prime(self, delta):
         # not sure where this is from, but it makes sense. davide would know.
         return(self.nu_obs / delta)
     
-    def update_Iprime_nu(self, r_eats, nu_cool, nu_inj, nu_prime, Pprime):
-        # the logic here is not in Rossi, but it should be.  I just got it from davide.   
-        Iprime_nu = np.zeros_like(r_eats)
+    def update_Iprime_dL(self, R_EATS, nu_cool, nu_inj, nu_prime, Pprime, delta, thetas2D):
+        '''
+        This updates both Iprime_nu and dL_nu
+        '''
+        # the logic here is not in Rossi, but it should be.  
+        Iprime_nu = np.zeros([self.n_theta, self.n_phi])
+        dL_nu = np.zeros([self.n_theta, self.n_phi])
         
         nu_cool_greater = np.where(nu_cool > nu_inj)
-        if nu_cool_greater[0].size>0:
+        if nu_cool_greater[0].size > 0:
             nu_max = nu_inj
+            Iprime_peak = Pprime * self.n_ism * R_EATS / nu_max
             
-            # eq. 19
-            Iprime_peak = Pprime * self.n_ism * r_eats / nu_max
+            nu_prime_small = np.where(nu_prime < nu_inj)
+            if nu_prime_small[0].size > 0:
+                Iprime_nu[nu_prime_small] = Iprime_peak[nu_prime_small] * (nu_prime[nu_prime_small] / nu_inj[nu_prime_small])**(1. / 3.)
             
-            # the following equations are not in Rossi.
-            nu_p_less = np.where(nu_prime < nu_inj)
-            Iprime_nu[nu_p_less] = Iprime_peak[nu_p_less] * (nu_prime[nu_p_less] / nu_inj[nu_p_less])**(1 / 3)
+            nu_prime_med = np.where((nu_prime >= nu_inj)&(nu_prime < nu_cool))
+            if nu_prime_med[0].size > 0:
+                Iprime_nu[nu_prime_med] = Iprime_peak[nu_prime_med] * (nu_prime[nu_prime_med] / nu_inj[nu_prime_med])**(-(self.pel-1) / 2.)
             
-            nu_p_mid=np.where((nu_prime >= nu_inj) & (nu_prime < nu_cool))
-            Iprime_nu[nu_p_mid] = Iprime_peak[nu_p_mid] * (nu_prime[nu_p_mid] / nu_inj[nu_p_mid])**(-(self.pel-1) / 2)
-            
-            nu_p_greater=np.where(nu_prime >= nu_cool)
-            Iprime_nu[nu_p_greater] = Iprime_peak[nu_p_greater] * (nu_inj[nu_p_greater] / nu_cool[nu_p_greater])**((self.pel-1) / 2) * (nu_prime[nu_p_greater] / nu_cool[nu_p_greater])**(-self.pel / 2)
+            nu_prime_large = np.where(nu_prime >= nu_cool)
+            if nu_prime_large[0].size > 0:
+                Iprime_nu[nu_prime_large] = Iprime_peak[nu_prime_large] * (nu_inj[nu_prime_large] / nu_cool[nu_prime_large])**((self.pel-1) / 2.) * (nu_prime[nu_prime_large] / nu_cool[nu_prime_large])**(-self.pel / 2.)
         
-
+        dL_nu[nu_cool_greater] = Iprime_nu[nu_cool_greater] * delta[nu_cool_greater]**3 * R_EATS[nu_cool_greater]**2 * np.sin(thetas2D[nu_cool_greater]) * self.d_theta * self.d_phi
+        
         nu_cool_less = np.where(nu_cool <= nu_inj)
         if nu_cool_less[0].size > 0:
             nu_max = nu_cool
-            Iprime_peak = Pprime * self.n_ism * r_eats / nu_max
+            Iprime_peak = Pprime * self.n_ism * R_EATS / nu_max
             
-            nu_p_less = np.where(nu_prime <= nu_cool)
-            Iprime_nu[nu_p_less] = Iprime_peak[nu_p_less] * (nu_prime[nu_p_less] / nu_cool[nu_p_less])**(1 / 3)
-                
-            nu_p_mid = np.where((nu_prime <= nu_inj) & (nu_prime > nu_cool))
-            Iprime_nu[nu_p_mid] = Iprime_peak[nu_p_mid] * (nu_prime[nu_p_mid] / nu_cool[nu_p_mid])**(-1 / 2)
-                
-            nu_p_greater=np.where(nu_prime > nu_inj)
-            Iprime_nu[nu_p_greater] = Iprime_peak[nu_p_greater] * (nu_cool[nu_p_greater] / nu_inj[nu_p_greater])**(1 / 2) * (nu_prime[nu_p_greater] / nu_inj[nu_p_greater])**(-self.pel / 2)
+            nu_prime_small = np.where(nu_prime <= nu_cool)
+            if nu_prime_small[0].size > 0:
+                Iprime_nu[nu_prime_small] = Iprime_peak[nu_prime_small] * (nu_prime[nu_prime_small] / nu_cool[nu_prime_small])**(1. / 3.)
             
-        return(Iprime_nu)
-    
-    def update_dL_nu(self, r_eats, Iprime_nu, thetas2D, nu_cool, nu_inj, delta):
-        # eq. 20
-        dL_nu = Iprime_nu * delta**3 * r_eats**2 * np.sin(thetas2D) * self.d_theta * self.d_phi
-        
-        return(dL_nu)
+            nu_prime_med = np.where((nu_prime <= nu_inj)&(nu_prime > nu_cool))
+            if nu_prime_med[0].size > 0:
+                Iprime_nu[nu_prime_med] = Iprime_peak[nu_prime_med] * (nu_prime[nu_prime_med] / nu_cool[nu_prime_med])**(-1 / 2.)
             
-    
+            nu_prime_large = np.where(nu_prime > nu_inj)
+            if nu_prime_large[0].size > 0:
+                Iprime_nu[nu_prime_large] = Iprime_peak[nu_prime_large] * (nu_cool[nu_prime_large] / nu_inj[nu_prime_large])**(1. / 2.) * (nu_prime[nu_prime_large] / nu_inj[nu_prime_large])**(-self.pel / 2.)
+
+        dL_nu[nu_cool_less] = Iprime_nu[nu_cool_less] * delta[nu_cool_less]**3 * R_EATS[nu_cool_less]**2 * np.sin(thetas2D[nu_cool_less]) * self.d_theta * self.d_phi
+
+        return(Iprime_nu, dL_nu)
+
     def make_EATS_arr(self):
         '''
         This array holds all the values which are defined over the observed surface.
         Most of these values change over the course of the integration and are recomputed
         at each timestep.
         '''
-        EATS_dtypes = [('R_EATS', 'float'),
-                       ('G_EATS', 'float'),
-                       ('eff_theta', 'float'),
-                       ('thetas2D', 'float'),
-                       ('gamma_inj', 'float'),
-                       ('B', 'float'),
-                       ('nu_inj', 'float'),
-                       ('gamma_cool', 'float'),
-                       ('nu_cool', 'float'),
-                       ('Pprime', 'float'),
-                       ('beta_EATS', 'float'),
-                       ('delta', 'float'),
-                       ('nu_prime', 'float'),
-                       ('Iprime_nu', 'float'),
-                       ('dL_nu', 'float')]
+        EATS_dtypes = [('R_EATS', 'f8'),
+                       ('G_EATS', 'f8'),
+                       ('eff_theta', 'f8'),
+                       ('thetas2D', 'f8'),
+                       ('gamma_inj', 'f8'),
+                       ('B', 'f8'),
+                       ('nu_inj', 'f8'),
+                       ('gamma_cool', 'f8'),
+                       ('nu_cool', 'f8'),
+                       ('Pprime', 'f8'),
+                       ('beta_EATS', 'f8'),
+                       ('delta', 'f8'),
+                       ('nu_prime', 'f8'),
+                       ('Iprime_nu', 'f8'),
+                       ('dL_nu', 'f8')]
                        
         EATS_array = np.zeros([self.n_theta, self.n_phi], dtype = EATS_dtypes)
+        
+        EATS_array['thetas2D'] = np.meshgrid(self.th_vals, self.ph_vals)[0].T
+
+        
         return(EATS_array)
     
     def update_EATS_arr(self, EATS_arr):   
@@ -440,19 +445,44 @@ class Lightcurve(object):
         
         EATS_arr['nu_prime'] = self.update_nu_prime(EATS_arr['delta'])
         
-        EATS_arr['Iprime_nu'] = self.update_Iprime_nu(EATS_arr['R_EATS'],
-                                                      EATS_arr['nu_cool'],
-                                                      EATS_arr['nu_inj'],
-                                                      EATS_arr['nu_prime'],
-                                                      EATS_arr['Pprime'])
-        
-        EATS_arr['dL_nu'] = self.update_dL_nu(EATS_arr['R_EATS'],
-                                              EATS_arr['Iprime_nu'],
-                                              EATS_arr['thetas2D'],
-                                              EATS_arr['nu_cool'],
-                                              EATS_arr['nu_inj'],
-                                              EATS_arr['delta'])
+        EATS_arr['Iprime_nu'], EATS_arr['dL_nu'] = self.update_Iprime_dL(EATS_arr['R_EATS'],
+                                                                         EATS_arr['nu_cool'],
+                                                                         EATS_arr['nu_inj'],
+                                                                         EATS_arr['nu_prime'],
+                                                                         EATS_arr['Pprime'],
+                                                                         EATS_arr['delta'],
+                                                                         EATS_arr['thetas2D'])
+
         return(EATS_arr)
+    
+    def make_EAT_surface(self, EATS_arr, time_ind_arr, t_obs, timestep, i_theta, i_phi): 
+        vec_axis = self.update_vec_axis(i_theta, i_phi)
+ 
+        EATS_arr['eff_theta'][i_theta, i_phi] = np.arccos(np.dot(vec_axis,
+                                                                 self.vec_obs))
+                    
+        time_of_flight = self.time_of_flight_delay(time_ind_arr['t_lab'][:, i_theta],
+                                                   self.r_vals,
+                                                    EATS_arr['eff_theta'][i_theta, i_phi])
+                                                        
+        EATS_arr['R_EATS'][i_theta, i_phi] = np.interp(t_obs[timestep],
+                                                       time_of_flight,
+                                                       self.r_vals)
+                    
+        EATS_arr['G_EATS'][i_theta, i_phi] = np.interp(EATS_arr['R_EATS'][i_theta, i_phi],
+                                                       self.r_vals,
+                                                       time_ind_arr['G'][:, i_theta])
+        
+        return(EATS_arr)
+
+    
+    def update_vec_axis(self, i_theta, i_phi):
+        v_a = np.array([np.sin(self.th_vals[i_theta]) * np.cos(self.ph_vals[i_phi]),
+                  np.sin(self.th_vals[i_theta]) * np.sin(self.ph_vals[i_phi]),
+                  np.cos(self.th_vals[i_theta])])
+        return(v_a)
+    
+        
     ###############
     
     ##################################
@@ -474,49 +504,34 @@ class Lightcurve(object):
         ### this will store the output lightcurve data
         lightcurve = self.new_lightcurve(t_obs)
         
-        vec_obs = np.array([np.sin(self.theta_obs),
-                            0,
-                            np.cos(self.theta_obs)])
-        
-        # update all the quantities like gamma_inj, B, nu_inj etc...
+        # this holds all the quantities like gamma_inj, B, nu_inj etc...
         EATS_arr = self.make_EATS_arr()
-        EATS_arr['thetas2D'] = np.meshgrid(self.th_vals, self.ph_vals)[0].T
         
         for timestep in xrange(len(t_obs)):
             for i_theta in xrange(self.n_theta):
                 for i_phi in xrange(self.n_phi):
                     
-                    ### These lines calculate the surface as seen by an observer###
-                    
-                    vec_axis = np.array([np.sin(self.th_vals[i_theta]) * np.cos(self.ph_vals[i_phi]),
-                                         np.sin(self.th_vals[i_theta]) * np.sin(self.ph_vals[i_phi]),
-                                         np.cos(self.th_vals[i_theta])])
-                    
-                    EATS_arr['eff_theta'][i_theta, i_phi] = np.arccos(np.dot(vec_axis, vec_obs))
-                    
-                    time_of_flight = self.time_of_flight_delay(time_ind_arr['t_lab'][:, i_theta],
-                                                               self.r_vals,
-                                                               EATS_arr['eff_theta'][i_theta, i_phi])
-                    
-                    EATS_arr['R_EATS'][i_theta, i_phi] = np.interp(t_obs[timestep],
-                                                                   time_of_flight,
-                                                                   self.r_vals)
-                    
-                    EATS_arr['G_EATS'][i_theta, i_phi] = np.interp(EATS_arr['R_EATS'][i_theta, i_phi],
-                                                                   self.r_vals,
-                                                                   time_ind_arr['G'][:, i_theta])
+                    ### Calculate the surface as seen by an observer###
+                    EATS_arr = self.make_EAT_surface(EATS_arr,
+                                                     time_ind_arr,
+                                                     t_obs,
+                                                     timestep,
+                                                     i_theta,
+                                                     i_phi)
 
-            #print(EATS_arr['G_EATS'])
             ### Calculate all the quantities associated with the new surface
             EATS_arr = self.update_EATS_arr(EATS_arr)
-            #print(EATS_arr['R_EATS'])
+            self.EATSarr = EATS_arr
+
             ### Add the luminosity to the lightcurve at this timestep
             lightcurve[timestep, 1] = EATS_arr['dL_nu'].sum() 
-            
+
             ### Update the screen with the progress
             prog_str = '\r Time evolving... {:.1F}%'
             sys.stdout.write(prog_str.format(timestep / len(t_obs) * 100))
             sys.stdout.flush()
+
+        print('')
             
         return(lightcurve)
         
@@ -542,7 +557,7 @@ class Lightcurve(object):
     ######################
     #### make a plot! ####
     ######################
-    def make_curve(self, data, units = None, ax = None, **kwargs):
+    def plot_curve(self, data, units = None, ax = None, **kwargs):
         data = np.copy(data)
         # convert time to days
         data[:, 0] /= 86400
@@ -567,6 +582,6 @@ if __name__ == "__main__":
     # here're some small inputs for a quick test plot
     testcurve = Lightcurve(n_theta = 50, n_phi = 10, dr = 0.1, dt = 0.1)
     data = testcurve.time_evolve()
-    testcurve.make_curve(data)
+    testcurve.plot_curve(data)
     plt.show()
 '''
