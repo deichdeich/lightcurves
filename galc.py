@@ -7,7 +7,7 @@ Date: July, 2017
 
 Full documentation available on the GitHub wiki.
 
-All equation numbers refer to Rossi et al. (2002) unless otherwise noted.
+All equation numbers refer to Rossi et al. (2004) unless otherwise noted.
 
 Based on code by D. Lazzati at Oregon State University,
 lazzatid@science.oregonstate.edu
@@ -34,26 +34,26 @@ class Lightcurve(object):
                  dt = .1,                    # timestep size, in seconds
                  radius_range = (5,20),        # log of the min and max simulated radius, cm
                  dr = .1,                    # stepsize of the radius
-                 energy_distribution = None,   # file path for a numerical distribution
-                 lorentz_distribution = None, # same as above, can specify "constant"
+            
                  
                  ### physical parameters ###
                  nu_obs = 7e14,             # observing frequency
                  E_iso = 1e48,              # fireball isotropic energy
                  G_0 = 100,                 # the initial Lorentz factor of the fireball
+                 energy_distribution = None,   # file path for a numerical distribution
+                 lorentz_distribution = None,  # same as above, can specify "constant"
+                 jet_type = "homogenous",   # homogenous, structured, gaussian, or numerical
                  theta_j = 90,              # jet opening angle, degrees
                  theta_obs = 0,             # observer angle, degrees
                  n_ism = 0.1,               # the number density of the interstellar medium
                  ee = 1e-2,                 # electron equipartition parameter
                  eB = 0.005,                # B field equipartition parameter
                  pel = 2.5,                 # electron acceleration slope
-                 jet_type = "homogenous",   # homogenous, structured, gaussian, or numerical
-                 a_e = 2,                   # the parameters which control the shape of the structured jet.  Refer to Rossi+ 2002.
+                 a_e = 2,                   # the parameters which control the shape of the structured jet.  Refer to Rossi+ 2004.
                  b_e = 1,
                  a_G = 1,
                  b_G = 1,
-                 theta_c = 90,              # core angular size, degrees- refer to Rossi.
-                 z = 1.):                   # redshift
+                 theta_c = 90):              # core angular size, degrees- refer to Rossi.
         
         ### physical parameters ###
         self.nu_obs = nu_obs               # observing frequency
@@ -71,7 +71,6 @@ class Lightcurve(object):
         self.b_e = b_e
         self.a_G = a_G
         self.b_G = b_G
-        self.z = z
         
         self.vec_obs = np.array([np.sin(self.theta_obs), 0, np.cos(self.theta_obs)])
         
@@ -81,6 +80,9 @@ class Lightcurve(object):
             self.theta_j = max(self.energy_distribution[:, 0]) # if the energy distribution is being read from a file, then you need to read the jet opening angle from the file
         else:
             self.theta_j = theta_j * np.pi / 180
+        
+        if energy_distribution is not None and jet_type is not 'numerical':
+            raise ValueError('If you specify an arbitrary energy distribution, you must also set jet_type to \'numerical\'.')
         
 
         if lorentz_distribution == "constant":
@@ -180,6 +182,8 @@ class Lightcurve(object):
 
             ### Calculate all the quantities associated with the new surface
             EATS_arr = self.update_EATS_arr(EATS_arr)
+            
+            ### this stores the state array of the EATS-defined quantities.  Not necessary, but useful for debugging.###
             self.EATSarr = EATS_arr
 
             ### Add the luminosity to the lightcurve at this timestep
@@ -224,9 +228,9 @@ class Lightcurve(object):
         return(energy_per_sa)
 
     def generate_lorentz_per_sa(self, thetas):
-        if self.jet_type == "homogenous" or self.jet_type == "gaussian" or self.lorentz_distribution == "constant":
+        if self.jet_type == "homogenous" or  self.jet_type == "gaussian": 
             lorentz_per_sa = np.zeros_like(thetas) + self.G_0
-            
+        
         elif self.jet_type == "structured":
             #  eq. 2
             denominator = (1 + (thetas / self.theta_c)**(self.a_G * self.b_G))
@@ -237,6 +241,9 @@ class Lightcurve(object):
                                                 self.lorentz_distribution[:, 1])
             lorentz_per_sa = lorentz_func(thetas)
         
+        elif self.lorentz_distribution == "constant":
+            lorentz_per_sa = np.zeros_like(thetas) + self.G_0
+            
         return(lorentz_per_sa)
     
     def get_r_vals(self):
@@ -571,7 +578,7 @@ def plot_curve(data, units = None, z = 1, ax = None, **kwargs):
         ax = fig.add_subplot(111)
 
     
-    jflux = get_Jy_flux(data[:, 1])
+    jflux = get_Jy_flux(data[:, 1], z)
     abflux = ab_from_jy(jflux)
 
     if units == 'Jy':
@@ -581,10 +588,11 @@ def plot_curve(data, units = None, z = 1, ax = None, **kwargs):
 
     lightcurve_plot = ax.loglog(data[:, 0], data[:, 1], **kwargs)
     return(lightcurve_plot)
-
+'''
 if __name__ == "__main__":
     # here're some small inputs for a quick test plot
     testcurve = Lightcurve(n_theta = 50, n_phi = 10, dr = 0.1, dt = 0.1)
     data = testcurve.time_evolve()
-    testcurve.plot_curve(data)
+    plot_curve(data)
     plt.show()
+'''
