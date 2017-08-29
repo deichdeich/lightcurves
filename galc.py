@@ -37,9 +37,9 @@ class Lightcurve(object):
             
                  
                  ### physical parameters ###
-                 nu_obs = 7e14,             # observing frequency
-                 E_iso = 1e48,              # fireball isotropic energy
-                 G_0 = 100,                 # the initial Lorentz factor of the fireball
+                 nu_obs = None,             # observing frequency
+                 E_iso = None,              # fireball isotropic energy
+                 G_0 = None,                 # the initial Lorentz factor of the fireball
                  jet_type = "homogenous",   # homogenous, structured, gaussian, or numerical
                  theta_j = 90,              # jet opening angle, degrees
                  theta_obs = 0,             # observer angle, degrees
