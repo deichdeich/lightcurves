@@ -28,18 +28,14 @@ sqrt2 = np.sqrt(2) # square root of 2; probably doesn't save a lot time
 
 class Lightcurve(object):
     def __init__(self,
-                 ### simulation parameters ###
+                 ### binning parameters ###
                  n_theta,                      # number of theta bins
                  n_phi,                        # number of phi bins
-                 dt = .1,                    # timestep size, in seconds
-                 radius_range = (5,20),        # log of the min and max simulated radius, cm
-                 dr = .1,                    # stepsize of the radius
-            
                  
                  ### physical parameters ###
-                 nu_obs = 7e14,             # observing frequency
-                 E_iso = 1e48,              # fireball isotropic energy
-                 G_0 = 100,                 # the initial Lorentz factor of the fireball
+                 nu_obs,             # observing frequency
+                 E_iso,            # fireball isotropic energy
+                 G_0,                 # the initial Lorentz factor of the fireball
                  jet_type = "homogenous",   # homogenous, structured, gaussian, or numerical
                  theta_j = 90,              # jet opening angle, degrees
                  theta_obs = 0,             # observer angle, degrees
@@ -51,7 +47,13 @@ class Lightcurve(object):
                  b_e = 1,
                  a_G = 1,
                  b_G = 1,
-                 theta_c = 90):              # core angular size, degrees- refer to Rossi.
+                 theta_c = 90,              # core angular size, refer to Rossi.
+
+                 ### radius and time ###
+                 dt = .1,                   # timestep size, in seconds
+                 radius_range = (5,20),     # log of the min and max simulated radius, cm
+                 dr = .1):                  # stepsize of the radius
+        
         
         ### physical parameters ###
         ### Order matters! ###
