@@ -33,9 +33,15 @@ class Lightcurve(object):
                  n_phi,                        # number of phi bins
                  
                  ### physical parameters ###
+<<<<<<< HEAD
                  nu_obs,             # observing frequency
                  E_iso,            # fireball isotropic energy
                  G_0,                 # the initial Lorentz factor of the fireball
+=======
+                 nu_obs = None,             # observing frequency
+                 E_iso = None,              # fireball isotropic energy
+                 G_0 = None,                 # the initial Lorentz factor of the fireball
+>>>>>>> a11220c19fa027ca08c401cbdc797923fb5191ed
                  jet_type = "homogenous",   # homogenous, structured, gaussian, or numerical
                  theta_j = 90,              # jet opening angle, degrees
                  theta_obs = 0,             # observer angle, degrees
