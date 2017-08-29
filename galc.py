@@ -40,8 +40,6 @@ class Lightcurve(object):
                  nu_obs = 7e14,             # observing frequency
                  E_iso = 1e48,              # fireball isotropic energy
                  G_0 = 100,                 # the initial Lorentz factor of the fireball
-                 energy_distribution = None,   # file path for a numerical distribution
-                 lorentz_distribution = None,  # same as above, can specify "constant"
                  jet_type = "homogenous",   # homogenous, structured, gaussian, or numerical
                  theta_j = 90,              # jet opening angle, degrees
                  theta_obs = 0,             # observer angle, degrees
@@ -56,41 +54,26 @@ class Lightcurve(object):
                  theta_c = 90):              # core angular size, degrees- refer to Rossi.
         
         ### physical parameters ###
+        ### Order matters! ###
+        self.jet_type = jet_type
+        self.E_iso = self.energy_distribution_init(E_iso)
+        self.G_0 = self.lorentz_distribution_init(G_0)
         self.nu_obs = nu_obs               # observing frequency
-        self.E_iso = E_iso                 # isotropic energy (for homogenous fireballs)
-        self.G_0 = G_0                     # initial lorentz factor (for homogenous fireballs)
-        self.n_ism = n_ism                   # the number density of the interstellar medium
+        self.n_ism = n_ism                 # the number density of the interstellar medium
         self.ee = ee                       # electron equipartition parameter
         self.eB = eB                       # B field equipartition parameter
-        self.pel = pel                        # electron acceleration slope
+        self.pel = pel                     # electron acceleration slope
+
+        self.theta_j = self.theta_j_init(self.E_iso, theta_j)
         
-        self.theta_obs = theta_obs * np.pi / 180
-        self.jet_type = jet_type                 
         self.theta_c = theta_c * np.pi/180
         self.a_e = a_e
         self.b_e = b_e
         self.a_G = a_G
         self.b_G = b_G
         
-        self.vec_obs = np.array([np.sin(self.theta_obs), 0, np.cos(self.theta_obs)])
-        
-        
-        if energy_distribution is not None:
-            self.energy_distribution = np.genfromtxt(energy_distribution)
-            self.theta_j = max(self.energy_distribution[:, 0]) # if the energy distribution is being read from a file, then you need to read the jet opening angle from the file
-        else:
-            self.theta_j = theta_j * np.pi / 180
-        
-        if energy_distribution is not None and jet_type is not 'numerical':
-            raise ValueError('If you specify an arbitrary energy distribution, you must also set jet_type to \'numerical\'.')
-        
-
-        if lorentz_distribution == "constant":
-            self.lorentz_distribution = lorentz_distribution
-        elif lorentz_distribution is not "constant" and lorentz_distribution is not None:
-            self.lorentz_distribution = np.genfromtxt(lorentz_distribution)
-            # is the lorentz data binned the same as the energy data?
-            self.theta_j_check(self.energy_distribution, self.lorentz_distribution)
+        self.theta_obs = self.set_theta_obs(theta_obs)
+        self.vec_obs = self.vec_obs_init(self.theta_obs)
         
         ### simulation parameters ###
         self.n_theta = n_theta
@@ -110,12 +93,117 @@ class Lightcurve(object):
         ### this stores the state array of the EATS-defined quantities.  Not necessary, but useful for debugging.###
         self.EATSarr = 999
     
+    ################################################################
+    ### getter and setter functions.  very boring, please ignore ###
+    ################################################################
+    def get_theta_obs(self):
+        return(self.theta_obs)
+    
+    def set_theta_obs(self, new_t_o):
+        self.theta_obs = new_t_o * np.pi / 180
+        self.vec_obs = self.vec_obs_init(self.theta_obs)
+        return(self.theta_obs)
+    
+    def get_E_iso(self):
+        return(self.E_iso)
+    
+    def set_E_iso(self, new_E_iso):
+        self.E_iso = self.energy_distribution_init(new_E_iso)
+        self.theta_j = self.theta_j_init(self.E_iso, self.theta_j)
+        return(self.E_iso)
+    
+    def get_G_0(self):
+        return(self.G_0)
+    
+    def set_G_0(self, new_G_0):
+        self.G_0 = self.lorentz_distribution_init(new_G_0)
+        return(self.G_0)
+    
+    def get_theta_j(self):
+        return(self.theta_j)
+    
+    def set_theta_j(self, new_theta_j):
+        self.theta_j = self.theta_j_init(new_theta_j)
+        return(self.theta_j)
+
+    def get_n_ism(self):
+        return(self.n_ism)
+    
+    def set_n_ism(self, new_n_ism):
+        self.n_ism = new_n_ism
+        return(self.n_ism)
+    
+    def get_nu_obs(self):
+        return(self.nu_obs)
+    
+    def set_nu_obs(self, new_nu_obs):
+        self.nu_obs = new_nu_obs
+        return(self.nu_obs)
+    #######################################
+    
+    ### these functions test to see what the input is for the energy and lorentz distributions.
+    def energy_distribution_init(self, energy_distribution):
+        if hasattr(energy_distribution, '__len__') and (not isinstance(energy_distribution, str)):
+            en_dis = energy_distribution
+            self.distribution_check(en_dis)
+                
+        elif isinstance(energy_distribution, str):
+            en_dis = np.genfromtxt(energy_distribution)
+            self.distribution_check(en_dis)
+
+        elif isinstance(energy_distribution, float):
+            en_dis = energy_distribution
+        
+        else:
+            raise ValueError('{} is not a valid input for E_iso')
+        
+        return(en_dis)    
+    
+    def lorentz_distribution_init(self, lorentz_distribution):
+        if hasattr(lorentz_distribution, '__len__') and (not isinstance(lorentz_distribution, str)):
+            lor_dis = lorentz_distribution
+            self.distribution_check(lor_dis)
+            
+        elif isinstance(lorentz_distribution, str):
+            lor_dis = np.genfromtxt(lorentz_distribution)
+            self.distribution_check(lor_dis)
+            # is the lorentz data binned the same as the energy data?
+            self.theta_j_check(self.E_iso, lor_dis)
+            
+        elif isinstance(lorentz_distribution, float):
+            lor_dis = lorentz_distribution
+        
+        else:
+            raise ValueError('{} is not a valid input for G_0')
+        
+        return(lor_dis)
+    
+    def distribution_check(self, distribution):
+        if self.jet_type is not 'numerical':
+               raise ValueError('If you specify an arbitrary energy distribution, you must also set jet_type to \'numerical\'.')
+        
+        if distribution.shape[1] != 2:
+            raise ValueError('Energy and Lorentz distributions must have shape (N, 2).  Your distribution has shape {}.'.format(distribution.shape))
+        
+        return()    
+    
+    def theta_j_init(self, energy_distribution, theta_j):
+        if self.jet_type == "numerical":
+            t_j = max(energy_distribution[:, 0])
+        else:
+            t_j = theta_j * np.pi / 180
+        return(t_j)
+    
+    def vec_obs_init(self, theta_obs):
+        vec_obs = np.array([np.sin(self.theta_obs), 0, np.cos(self.theta_obs)])
+        return(vec_obs)
+    
     # can't extrapolate from the data, so you have to read the jet opening angle directly
     # from the energy and lorentz input data.  if they don't agree, it's bad.
     def theta_j_check(self, energy, lorentz):
         emax = max(energy[:, 0])
         lmax = max(lorentz[:, 0])
-        if (emax - lmax) > 0.01:
+        if (emax - lmax) > 0.05:
             raise(ValueError('Your energy and lorentz distributons are not binned in the same way.  Cannot get reliable theta_j.  Energy theta_j: {}.  Lorentz theta_j: {}'.format(emax, lmax)))      
    
     def get_theta_j(self):
@@ -159,6 +247,7 @@ class Lightcurve(object):
         ### establish all of the quantities for the duration of the integration
         time_ind_arr = self.make_time_independent_arr()
         
+        
         ### t_obs is the clock for the lightcurve data
         t_obs = self.get_t_obs(start_time, end_time)
         
@@ -191,7 +280,7 @@ class Lightcurve(object):
 
             ### Update the screen with the progress
             prog_str = '\r Time evolving... {:.1F}%'
-            sys.stdout.write(prog_str.format(timestep / len(t_obs) * 100))
+            sys.stdout.write(prog_str.format(timestep / (len(t_obs) - 1) * 100))
             sys.stdout.flush()
 
         print('')
@@ -220,8 +309,8 @@ class Lightcurve(object):
         elif self.jet_type == "numerical":
             # this makes a custom function for the energy per solid angle,
             # which can be sampled at whatever binning you want, regardless the input data.
-            energy_func = interpolate.interp1d(self.energy_distribution[:, 0],
-                                               self.energy_distribution[:, 1])
+            energy_func = interpolate.interp1d(self.E_iso[:, 0],
+                                               self.E_iso[:, 1])
             
             energy_per_sa = energy_func(thetas)
             
@@ -236,11 +325,10 @@ class Lightcurve(object):
             denominator = (1 + (thetas / self.theta_c)**(self.a_G * self.b_G))
             lorentz_per_sa = self.G_0 / (denominator**(1 / self.b_G))
         
-        elif self.jet_type == "numerical" and self.lorentz_distribution is not "constant":
-            lorentz_func = interpolate.interp1d(self.lorentz_distribution[:, 0],
-                                                self.lorentz_distribution[:, 1])
+        elif self.jet_type == "numerical":
+            lorentz_func = interpolate.interp1d(self.G_0[:, 0],
+                                                self.G_0[:, 1])
             lorentz_per_sa = lorentz_func(thetas)
-        
         elif self.lorentz_distribution == "constant":
             lorentz_per_sa = np.zeros_like(thetas) + self.G_0
             
@@ -264,9 +352,17 @@ class Lightcurve(object):
         G = (np.sqrt(numerator) - 1) / denominator
         
         ### check for where it is bigger than G_0, and change everything up until then
-        greater_than_G_0 = np.where(G > self.G_0)[0]
-        if greater_than_G_0.size > 0:
-            G[:greater_than_G_0[-1]] = self.G_0
+        ### is the behavior for the theta-dependent distributions correct?  pretty sure
+        if self.jet_type == 'numerical':
+            greater_than_G_0 = np.where(G > max(self.G_0[1]))[0]
+            if greater_than_G_0.size > 0:
+                G[:greater_than_G_0[-1]] = max(self.G_0[1])
+        
+        else:
+            greater_than_G_0 = np.where(G > self.G_0)[0]
+            if greater_than_G_0.size > 0:
+                G[:greater_than_G_0[-1]] = self.G_0
+        
         return(G)
     
     def get_G_sh(self, G):
@@ -291,7 +387,7 @@ class Lightcurve(object):
 
         for i_th in xrange(th_length):
             prog_str = '\r Calculating laboratory time... {:.1F}%'
-            sys.stdout.write(prog_str.format((i_th / th_length) * 100))
+            sys.stdout.write(prog_str.format((i_th / (th_length + 1)) * 100))
             sys.stdout.flush()
             for i_r in xrange(r_length):
                 t_lab[i_r][i_th] = np.trapz(1 / (cc * b_sh[:i_r+1, i_th]),
