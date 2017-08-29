@@ -325,7 +325,7 @@ class Lightcurve(object):
             denominator = (1 + (thetas / self.theta_c)**(self.a_G * self.b_G))
             lorentz_per_sa = self.G_0 / (denominator**(1 / self.b_G))
         
-        elif self.jet_type == "numerical" and (not isinstance(lorentz_distribution, float)):
+        elif self.jet_type == "numerical" and (not isinstance(self.G_0, float)):
             lorentz_func = interpolate.interp1d(self.G_0[:, 0],
                                                 self.G_0[:, 1])
             lorentz_per_sa = lorentz_func(thetas)
