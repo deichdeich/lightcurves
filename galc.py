@@ -18,7 +18,7 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 import sys
 
-### Some global constants ###
+#### Some global constants ####
 cc = 2.997e10  # speed of light in cm/s
 m_p = 1.67e-24 # mass of proton
 m_e = m_p / 1836. # mass of electron
